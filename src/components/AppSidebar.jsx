@@ -1,0 +1,104 @@
+import { signOut } from "firebase/auth";
+import { auth } from "../firebase";
+import {
+  LayoutDashboard,
+  PlusCircle,
+  Building2,
+  Settings,
+  Shield,
+  Users,
+} from "lucide-react";
+
+export default function AppSidebar({
+  user,
+  claims,
+  active = "home",
+  onGoHome,
+  onGoCreateEvent,
+  onGoUnits,
+  onGoAccess,
+}) {
+  const canViewAll = !!claims?.canViewAll;
+  const role = claims?.role || "-";
+  const unitId = claims?.unitId || "-";
+
+  async function logout() {
+    await signOut(auth);
+  }
+
+  return (
+    <aside className="dashboardSidebar">
+      <div className="sidebarBrand">
+        <div className="brandLogo">
+          <Shield size={22} />
+        </div>
+        <div>
+          <div className="brandTitle">Mapoteca PMAM</div>
+          <div className="brandSubtitle">Painel Operacional</div>
+        </div>
+      </div>
+
+      <nav className="sidebarNav">
+        <button
+          className={`navItem ${active === "home" ? "navItemActive" : ""}`}
+          onClick={() => onGoHome?.()}
+          type="button"
+        >
+          <LayoutDashboard size={18} />
+          <span>Dashboard</span>
+        </button>
+
+        <button
+          className={`navItem navItemCreate ${
+            active === "create-event" ? "navItemActiveCreate" : ""
+          }`}
+          onClick={() => onGoCreateEvent?.()}
+          type="button"
+        >
+          <PlusCircle size={18} />
+          <span>Criar Evento</span>
+        </button>
+
+        <button
+          className={`navItem ${active === "units" ? "navItemActive" : ""}`}
+          onClick={() => onGoUnits?.()}
+          type="button"
+        >
+          <Building2 size={18} />
+          <span>Unidades</span>
+        </button>
+
+        <button
+          className={`navItem ${active === "access" ? "navItemActive" : ""}`}
+          onClick={() => onGoAccess?.()}
+          type="button"
+        >
+          <Users size={18} />
+          <span>Acessos</span>
+        </button>
+
+        <button className="navItem" type="button">
+          <Settings size={18} />
+          <span>Configurações</span>
+        </button>
+      </nav>
+
+      <div className="sidebarUserCard">
+        <div className="userMail">{user?.email || "-"}</div>
+        <div className="userMeta">
+          Role: <b>{role}</b>
+        </div>
+        <div className="userMeta">
+          Unidade: <b>{unitId}</b>
+        </div>
+        <div className="userMeta">
+          Visão total: <b>{canViewAll ? "SIM" : "NÃO"}</b>
+        </div>
+
+        <button className="logoutBtn" onClick={logout} type="button">
+          Sair
+        </button>
+      </div>
+    </aside>
+  );
+}

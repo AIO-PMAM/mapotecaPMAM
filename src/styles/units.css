@@ -1,0 +1,605 @@
+* {
+  box-sizing: border-box;
+}
+
+.unitsShell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 270px 1fr;
+  background: #f3f5fb;
+  color: #1f2937;
+}
+
+.unitsSidebar {
+  background: #121726;
+  color: #fff;
+  padding: 22px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.unitsBrand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.unitsBrandLogo {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #d6f36b, #b9df3f);
+  color: #111827;
+  display: grid;
+  place-items: center;
+}
+
+.unitsBrandTitle {
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.unitsBrandSub {
+  font-size: 13px;
+  color: #aeb7d0;
+}
+
+.unitsUserCard {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 18px;
+  padding: 16px;
+}
+
+.unitsUserMail {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 10px;
+  word-break: break-word;
+}
+
+.unitsUserMeta {
+  font-size: 13px;
+  color: #d4dbef;
+  margin-bottom: 8px;
+}
+
+.unitsMain {
+  padding: 28px;
+}
+
+.unitsTopbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  margin-bottom: 22px;
+}
+
+.unitsWelcome {
+  font-size: 14px;
+  color: #6b7280;
+  margin-bottom: 6px;
+}
+
+.unitsTitle {
+  margin: 0;
+  font-size: 30px;
+  line-height: 1.1;
+}
+
+.unitsSubline {
+  margin-top: 8px;
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.unitsBackBtn {
+  border: 0;
+  background: #fff;
+  color: #111827;
+  border-radius: 16px;
+  padding: 11px 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+  font-weight: 700;
+}
+
+.unitsGrid {
+  display: grid;
+  grid-template-columns: 420px minmax(0, 1fr);
+  gap: 20px;
+}
+
+.unitsCard {
+  background: #fff;
+  border-radius: 26px;
+  padding: 22px;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.06);
+}
+
+.unitsCardHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.unitsCardIcon {
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  background: #eef8c9;
+  color: #44510f;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.unitsCardHeader h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.unitsCardHeader p {
+  margin: 6px 0 0;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.unitsForm {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.unitsField {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.unitsField label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #6b7280;
+}
+
+.unitsField input,
+.unitsField select {
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: #f9fafb;
+  outline: none;
+}
+
+.unitsField input:focus,
+.unitsField select:focus {
+  border-color: #c0dd54;
+  background: #fff;
+}
+
+.unitsMessage {
+  border-radius: 16px;
+  padding: 13px 14px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.unitsMessage.error {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.unitsMessage.success {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+.unitsActionsRow {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.unitsSaveBtn,
+.unitsSecondaryBtn {
+  border-radius: 16px;
+  padding: 12px 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.unitsSaveBtn {
+  border: 0;
+  background: #d6f36b;
+  color: #111827;
+}
+
+.unitsSaveBtn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.unitsSecondaryBtn {
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #374151;
+}
+
+.unitsEmpty {
+  color: #6b7280;
+  padding: 8px 0;
+}
+
+.unitsTree {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.treeGroup {
+  border: 1px solid #e5e7eb;
+  border-radius: 20px;
+  padding: 16px;
+  background: #f9fafb;
+}
+
+.treeGestora,
+.treeSubItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.treeToggleArea {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  text-align: left;
+  flex: 1;
+}
+
+.treeChevron {
+  transition: transform 0.2s ease;
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
+.treeChevron.expanded {
+  transform: rotate(90deg);
+}
+
+.treeChevron.collapsed {
+  transform: rotate(0deg);
+}
+
+.treeMain {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.treeMain strong {
+  font-size: 14px;
+}
+
+.treeMain span {
+  color: #4b5563;
+  font-size: 14px;
+}
+
+.treeActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.treeIconBtn {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #374151;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.treeIconBtn.add {
+  background: #eef8c9;
+  border-color: #d6f36b;
+  color: #44510f;
+}
+
+.treeIconBtn.danger {
+  background: #fff;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.treeBadge {
+  background: #d6f36b;
+  color: #111827;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.treeBadge.soft {
+  background: #eef2ff;
+  color: #3730a3;
+}
+
+.treeSubs {
+  margin-top: 14px;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-left: 2px solid #d6f36b;
+}
+
+.treeNoSubs {
+  margin-top: 12px;
+  color: #6b7280;
+  font-size: 13px;
+  padding-left: 26px;
+}
+
+@media (max-width: 1100px) {
+  .unitsShell {
+    grid-template-columns: 1fr;
+  }
+
+  .unitsSidebar {
+    display: none;
+  }
+
+  .unitsMain {
+    padding: 18px;
+  }
+
+  .unitsGrid {
+    grid-template-columns: 1fr;
+  }
+}
+.unitsTree.cleanTree {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.treeNode {
+  position: relative;
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+}
+
+.treeNodeHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+}
+
+.treeNodeMain {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex: 1;
+  text-align: left;
+  cursor: pointer;
+}
+
+.treeNodeIdentity {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.treeNodeTitleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.treeNodeCode {
+  font-size: 14px;
+  font-weight: 800;
+  color: #111827;
+  background: #f3f4f6;
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.treeNodeName {
+  font-size: 14px;
+  color: #374151;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.treeNodeMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.treeNodeSubText {
+  font-size: 12px;
+  color: #6b7280;
+  font-weight: 600;
+}
+
+.treeNodeActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.treeChildren {
+  position: relative;
+  margin-left: 22px;
+  padding: 0 0 12px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.treeChildren::before {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 0;
+  bottom: 12px;
+  width: 2px;
+  background: #d6f36b;
+  border-radius: 999px;
+}
+
+.treeChildren > .treeNode::before {
+  content: "";
+  position: absolute;
+  left: -20px;
+  top: 22px;
+  width: 18px;
+  height: 2px;
+  background: #d6f36b;
+  border-radius: 999px;
+}
+
+.treeChevron {
+  transition: transform 0.2s ease;
+  color: #6b7280;
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.treeChevron.expanded {
+  transform: rotate(90deg);
+}
+
+.treeChevron.collapsed {
+  transform: rotate(0deg);
+}
+
+.treeLeafDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #d6f36b;
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+
+.treeIconBtn {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #374151;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.treeIconBtn:hover {
+  background: #f9fafb;
+}
+
+.treeIconBtn.add {
+  background: #eef8c9;
+  border-color: #d6f36b;
+  color: #44510f;
+}
+
+.treeIconBtn.add:hover {
+  background: #e7f3b2;
+}
+
+.treeIconBtn.danger {
+  background: #fff;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.treeIconBtn.danger:hover {
+  background: #fef2f2;
+}
+
+.treeBadge {
+  background: #d6f36b;
+  color: #111827;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.treeBadge.soft {
+  background: #eef2ff;
+  color: #3730a3;
+}
+
+.treeBadge.softGray {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+@media (max-width: 768px) {
+  .treeNodeHeader {
+    flex-direction: column;
+  }
+
+  .treeNodeActions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .treeChildren {
+    margin-left: 12px;
+    padding-left: 16px;
+  }
+
+  .treeChildren > .treeNode::before {
+    left: -16px;
+    width: 14px;
+  }
+}
