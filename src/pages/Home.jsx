@@ -49,6 +49,8 @@ import {
   Users,
   FileText,
   FolderOpen,
+  Plus,
+  Minus,
 } from "lucide-react";
 
 import "leaflet/dist/leaflet.css";
@@ -226,35 +228,116 @@ function getDocumentExtension(fileName = "") {
 }
 
 function getDocumentTypeLabel(docItem) {
+  const explicitType = normalizeDocumentType(docItem?.documentType, "");
+
+  if (explicitType) {
+    return documentTypeLabel(explicitType);
+  }
+
   const name = String(docItem?.fileName || "").toLowerCase();
   const category = String(docItem?.category || "").toLowerCase();
+  const type = String(docItem?.type || docItem?.documentType || "").toLowerCase();
 
-  if (name.includes("plano") || category.includes("planejamento")) {
-    return "Plano de Operação";
+  const source = `${name} ${category} ${type}`;
+
+  if (source.includes("plano") || source.includes("planejamento")) {
+    return "Plano";
   }
 
-  if (name.includes("ordem") || category.includes("ordem")) {
-    return "Ordem de Operações";
+  if (
+    source.includes("ordem") ||
+    source.includes("operacao") ||
+    source.includes("operação") ||
+    source.includes("operacoes") ||
+    source.includes("operações")
+  ) {
+    return "Ordem";
   }
 
-  if (name.includes("nota")) {
-    return "Nota";
-  }
-
-  if (name.includes("cronograma")) {
+  if (source.includes("cronograma")) {
     return "Cronograma";
   }
 
-  if (name.includes("oficio") || name.includes("ofício")) {
+  if (source.includes("oficio") || source.includes("ofício")) {
     return "Ofício";
   }
 
-  if (name.includes("desdobramento") || category.includes("desdobramento")) {
+  if (source.includes("desdobramento")) {
     return "Desdobramento";
   }
 
   return "Documento";
 }
+
+const DOCUMENT_TYPE_OPTIONS = [
+  { value: "DESDOBRAMENTO", label: "Desdobramento" },
+  { value: "PLANO", label: "Plano" },
+  { value: "ORDEM", label: "Ordem" },
+  { value: "CRONOGRAMA", label: "Cronograma" },
+  { value: "OFICIO", label: "Ofício" },
+  { value: "DOCUMENTO", label: "Documento" },
+];
+
+function normalizeDocumentType(value, fallback = "DOCUMENTO") {
+  const raw = String(value || "").trim().toUpperCase();
+
+  if (
+    raw === "DESDOBRAMENTO" ||
+    raw === "PLANO" ||
+    raw === "ORDEM" ||
+    raw === "CRONOGRAMA" ||
+    raw === "OFICIO" ||
+    raw === "DOCUMENTO"
+  ) {
+    return raw;
+  }
+
+  return fallback;
+}
+
+function getDocumentTypeOptions(origin) {
+  const normalizedOrigin = String(origin || "").toUpperCase();
+
+  if (normalizedOrigin === "UNIT") {
+    return DOCUMENT_TYPE_OPTIONS;
+  }
+
+  return DOCUMENT_TYPE_OPTIONS.filter(
+    (item) => item.value !== "DESDOBRAMENTO"
+  );
+}
+
+function getEffectiveDocumentType(docItem) {
+  const origin = String(docItem?.origin || "").toUpperCase();
+
+  if (docItem?.documentType) {
+    return normalizeDocumentType(
+      docItem.documentType,
+      origin === "UNIT" ? "DESDOBRAMENTO" : "DOCUMENTO"
+    );
+  }
+
+  if (origin === "UNIT") {
+    return "DESDOBRAMENTO";
+  }
+
+  return normalizeDocumentType(docItem?.category, "DOCUMENTO");
+}
+
+function documentTypeLabel(value) {
+  const map = {
+    DESDOBRAMENTO: "Desdobramento",
+    PLANO: "Plano",
+    ORDEM: "Ordem",
+    CRONOGRAMA: "Cronograma",
+    OFICIO: "Ofício",
+    DOCUMENTO: "Documento",
+  };
+
+  return map[normalizeDocumentType(value, "")] || "Documento";
+}
+
+
 
 function getEventStartDate(ev) {
   return normalizeToDate(ev.startAt || ev.createdAt);
@@ -483,11 +566,19 @@ function toArray(value) {
 }
 
 function normalizeCode(value) {
-  return String(value || "").trim().toUpperCase();
+  return String(value || "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
 }
 
 function normalizeText(value) {
-  return String(value || "").trim().toUpperCase();
+  return String(value || "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
 }
 
 function getUnitCode(unit) {
@@ -517,9 +608,14 @@ function getCurrentUserPermissions(user, claims) {
   const orderedUnitIds = [
     ...toArray(claims?.unitId),
     ...toArray(claims?.currentUnitId),
-    ...toArray(user?.unitId),
     ...toArray(claims?.unitIds),
+    ...toArray(claims?.accessScopeUnitIds),
+
+    ...toArray(user?.unitId),
+    ...toArray(user?.currentUnitId),
     ...toArray(user?.unitIds),
+    ...toArray(user?.accessScopeUnitIds),
+    ...toArray(user?.ancestorUnitIds),
   ]
     .map((item) => String(item || "").trim())
     .filter(Boolean);
@@ -527,11 +623,14 @@ function getCurrentUserPermissions(user, claims) {
   const orderedUnitCodes = [
     ...toArray(claims?.unitCode),
     ...toArray(claims?.command),
-    ...toArray(user?.unitCode),
-    ...toArray(user?.sigla),
     ...toArray(claims?.unitCodes),
     ...toArray(claims?.commands),
+    ...toArray(claims?.accessScopeUnitCodes),
+
+    ...toArray(user?.unitCode),
+    ...toArray(user?.sigla),
     ...toArray(user?.unitCodes),
+    ...toArray(user?.accessScopeUnitCodes),
   ]
     .map((item) => normalizeCode(item))
     .filter(Boolean);
@@ -543,14 +642,35 @@ function getCurrentUserPermissions(user, claims) {
     ...toArray(claims?.role),
     ...toArray(claims?.roles),
     ...toArray(claims?.profile),
+    ...toArray(claims?.accessProfile),
+    ...toArray(claims?.systemRole),
+
     ...toArray(user?.role),
     ...toArray(user?.roles),
+    ...toArray(user?.profile),
+    ...toArray(user?.accessProfile),
+    ...toArray(user?.systemRole),
+    ...toArray(user?.funcao),
   ]
     .map((item) => normalizeText(item))
     .filter(Boolean);
 
+  const primaryRole = normalizeText(claims?.role || user?.role || "");
+  const primarySystemRole = normalizeText(
+    claims?.systemRole || user?.systemRole || ""
+  );
+  const primaryAccessProfile = normalizeText(
+    claims?.accessProfile ||
+      user?.accessProfile ||
+      claims?.profile ||
+      user?.profile ||
+      ""
+  );
+
   const isAdminUser =
-    roleTexts.includes("ADMIN") || roleTexts.includes("AIO_ADMIN");
+    roleTexts.includes("ADMIN") ||
+    roleTexts.includes("AIO_ADMIN") ||
+    roleTexts.includes("SUPER_ADMIN");
 
   const isAIOUser =
     roleTexts.includes("AIO") ||
@@ -558,13 +678,67 @@ function getCurrentUserPermissions(user, claims) {
     roleTexts.some(
       (role) =>
         role.includes("ASSESSORIA DE INTEGRACAO OPERACIONAL") ||
-        role.includes("ASSESSORIA DE INTEGRAÇÃO OPERACIONAL")
+        role.includes("ASSESSORIA DE INTEGRACAO") ||
+        role === "AIO"
     ) ||
-    unitCodes.has("AIO") ||
-    orderedUnitIds.includes("AIO");
+    unitCodes.has("AIO");
 
-  const canReadAll = claims?.canViewAll === true || isAdminUser || isAIOUser;
-  const canManageAll = isAdminUser || isAIOUser;
+  const isOperationalProfile =
+    primaryRole === "UNIDADE_OPERACIONAL" ||
+    primarySystemRole === "UNIDADE_OPERACIONAL" ||
+    primaryAccessProfile === "UNIDADE_OPERACIONAL";
+
+  const isGestoraProfile =
+    !isOperationalProfile &&
+    (
+      [
+        primaryRole,
+        primarySystemRole,
+        primaryAccessProfile,
+      ].includes("UNIDADE_GESTORA") ||
+      [
+        primaryRole,
+        primarySystemRole,
+        primaryAccessProfile,
+      ].includes("COMANDO") ||
+      [
+        primaryRole,
+        primarySystemRole,
+        primaryAccessProfile,
+      ].includes("COMANDO_GERAL") ||
+      [
+        primaryRole,
+        primarySystemRole,
+        primaryAccessProfile,
+      ].includes("UNIT_MANAGER") ||
+      [
+        primaryRole,
+        primarySystemRole,
+        primaryAccessProfile,
+      ].includes("P3") ||
+      [
+        primaryRole,
+        primarySystemRole,
+        primaryAccessProfile,
+      ].includes("P-3") ||
+      [
+        primaryRole,
+        primarySystemRole,
+        primaryAccessProfile,
+      ].includes("AUXILIAR_P3")
+    );
+
+  const canReadAll =
+    claims?.canViewAll === true ||
+    user?.permissions?.canViewAll === true ||
+    isAdminUser ||
+    isAIOUser;
+
+  const canManageAll =
+    claims?.canEditAll === true ||
+    user?.permissions?.canEditAll === true ||
+    isAdminUser ||
+    isAIOUser;
 
   return {
     unitIds,
@@ -573,6 +747,9 @@ function getCurrentUserPermissions(user, claims) {
     activeUnitCode: orderedUnitCodes[0] || "",
     isAIOUser,
     isAdminUser,
+    isGestoraProfile,
+    isOperationalProfile,
+    usesScopeVisibility: canReadAll || isGestoraProfile,
     canReadAll,
     canManageAll,
     isGlobalReader: canReadAll,
@@ -609,32 +786,35 @@ function canManageEvent(ev, permissions, user) {
   return false;
 }
 
-function canManageDocument(docItem, permissions, user) {
-  if (!docItem) return false;
-  if (permissions.canManageAll) return true;
+function canShowTopEventActionsForEvent(ev, permissions, user, directUnitIdentity = {}) {
+  if (!ev) return false;
+  if (permissions.canManageAll || permissions.isAIOUser) return true;
 
-  const origin = String(docItem.origin || "").toUpperCase();
-  if (origin !== "UNIT") return false;
+  const creatorUnitId = String(ev?.createdByUnitId || "").trim();
+  const creatorUnitCode = normalizeCode(ev?.createdByUnitCode);
+  const directUnitId = String(
+    directUnitIdentity?.unitId || permissions.activeUnitId || ""
+  ).trim();
+  const directUnitCode = normalizeCode(
+    directUnitIdentity?.unitCode || permissions.activeUnitCode || ""
+  );
 
-  if (user?.uid && docItem.uploadedByUid && docItem.uploadedByUid === user.uid) {
+  if (directUnitId && creatorUnitId && directUnitId === creatorUnitId) {
+    return true;
+  }
+
+  if (directUnitCode && creatorUnitCode && directUnitCode === creatorUnitCode) {
+    return true;
+  }
+
+  if (user?.uid && ev?.createdByUid && String(ev.createdByUid) === String(user.uid)) {
     return true;
   }
 
   if (
     user?.email &&
-    docItem.uploadedByEmail &&
-    String(docItem.uploadedByEmail).toLowerCase() === String(user.email).toLowerCase()
-  ) {
-    return true;
-  }
-
-  if (docItem.unitId && permissions.unitIds.has(docItem.unitId)) {
-    return true;
-  }
-
-  if (
-    normalizeCode(docItem.unitCode) &&
-    permissions.unitCodes.has(normalizeCode(docItem.unitCode))
+    ev?.createdByEmail &&
+    String(ev.createdByEmail).toLowerCase() === String(user.email).toLowerCase()
   ) {
     return true;
   }
@@ -642,11 +822,60 @@ function canManageDocument(docItem, permissions, user) {
   return false;
 }
 
-function shouldKeepDeletedDocumentVisible(docItem) {
-  const origin = String(docItem?.origin || "").toUpperCase();
-  const deletedByActorType = String(docItem?.deletedByActorType || "").toUpperCase();
+function canManageDocument(docItem, permissions, user, directUnitIdentity = {}) {
+  if (!docItem) return false;
+  if (permissions.canManageAll) return true;
 
-  return origin === "UNIT" && deletedByActorType !== "AIO";
+  const origin = String(docItem.origin || "").toUpperCase();
+  if (origin !== "UNIT") return false;
+
+  const uploaderUid = String(docItem.uploadedByUid || "").trim();
+  const uploaderEmail = String(docItem.uploadedByEmail || "").trim().toLowerCase();
+  const currentUid = String(user?.uid || "").trim();
+  const currentEmail = String(user?.email || "").trim().toLowerCase();
+
+  const directUnitId = String(
+    directUnitIdentity?.unitId || permissions.activeUnitId || ""
+  ).trim();
+  const directUnitCode = normalizeCode(
+    directUnitIdentity?.unitCode || permissions.activeUnitCode || ""
+  );
+
+  const documentUnitId = String(docItem.unitId || "").trim();
+  const documentUnitCode = normalizeCode(docItem.unitCode);
+
+  const isOwnUpload =
+    (currentUid && uploaderUid && uploaderUid === currentUid) ||
+    (currentEmail && uploaderEmail && uploaderEmail === currentEmail);
+
+  const isOwnUnitDocument =
+    (directUnitId && documentUnitId && documentUnitId === directUnitId) ||
+    (directUnitCode && documentUnitCode && documentUnitCode === directUnitCode);
+
+  // A unidade operacional só gerencia arquivos da própria unidade.
+  if (isOwnUpload || isOwnUnitDocument) {
+    return true;
+  }
+
+  // Somente a gestora (ou AIO/ADM via canManageAll acima) pode gerenciar
+  // arquivos das subordinadas dentro do seu escopo.
+  if (!permissions.isGestoraProfile) {
+    return false;
+  }
+
+  if (documentUnitId && permissions.unitIds.has(documentUnitId)) {
+    return true;
+  }
+
+  if (documentUnitCode && permissions.unitCodes.has(documentUnitCode)) {
+    return true;
+  }
+
+  return false;
+}
+
+function shouldKeepDeletedDocumentVisible() {
+  return false;
 }
 
 function canOpenDocument(docItem, permissions) {
@@ -668,15 +897,127 @@ function sanitizeFileName(name) {
     .replace(/[^a-zA-Z0-9._-]/g, "");
 }
 
+
+function sanitizeStorageToken(value) {
+  return normalizeCode(value)
+    .replace(/\s+/g, "_")
+    .replace(/[^A-Z0-9._-]/g, "");
+}
+
+function isStorageUnauthorizedError(error) {
+  const code = String(error?.code || "").toLowerCase();
+  const message = String(error?.message || "").toLowerCase();
+
+  return (
+    code.includes("storage/unauthorized") ||
+    code.includes("permission-denied") ||
+    message.includes("storage/unauthorized") ||
+    message.includes("missing or insufficient permissions") ||
+    message.includes("does not have permission")
+  );
+}
+
+function buildStorageUploadCandidatePaths({
+  eventId,
+  fileName,
+  category = "DOCUMENTO",
+  documentType = "",
+  unitKey = "",
+}) {
+  const safeName = sanitizeFileName(fileName);
+  const timestamp = Date.now();
+  const safeCategory = sanitizeStorageToken(category) || "DOCUMENTO";
+  const safeType = sanitizeStorageToken(documentType);
+  const safeUnit = sanitizeStorageToken(unitKey);
+
+  if (safeCategory === "DESDOBRAMENTO") {
+    const targetUnitFolder = safeUnit || "UNIDADE";
+    return [
+      `events/${eventId}/documents/desdobramentos/${targetUnitFolder}/${timestamp}_${safeName}`,
+    ];
+  }
+
+  const typePrefix = safeType || safeCategory;
+  const candidates = [
+    `events/${eventId}/documents/planejamento/${timestamp}_${safeName}`,
+    `events/${eventId}/documents/${typePrefix}_${timestamp}_${safeName}`,
+    `events/${eventId}/${typePrefix}_${timestamp}_${safeName}`,
+  ];
+
+  return Array.from(new Set(candidates.filter(Boolean)));
+}
+
+async function uploadDocumentToStorageWithFallback(file, candidates) {
+  let lastError = null;
+  const attemptedPaths = [];
+
+  for (const candidatePath of toArray(candidates)) {
+    try {
+      const storageRef = ref(storage, candidatePath);
+      await uploadBytes(storageRef, file);
+      const downloadURL = await getDownloadURL(storageRef);
+
+      return {
+        storagePath: candidatePath,
+        downloadURL,
+        attemptedPaths: [...attemptedPaths, candidatePath],
+      };
+    } catch (error) {
+      lastError = error;
+      attemptedPaths.push(candidatePath);
+
+      if (!isStorageUnauthorizedError(error)) {
+        error.attemptedStoragePaths = attemptedPaths;
+        throw error;
+      }
+    }
+  }
+
+  if (lastError) {
+    lastError.attemptedStoragePaths = attemptedPaths;
+  }
+
+  throw lastError || new Error("Não foi possível enviar o arquivo para o Storage.");
+}
+
+function upsertEmbeddedDesdobramentoEntry(entries, nextEntry) {
+  const safeEntries = Array.isArray(entries) ? entries.filter(Boolean) : [];
+  const nextUnitId = String(nextEntry?.unitId || "").trim();
+  const nextUnitCode = normalizeCode(nextEntry?.unitCode);
+
+  const filteredEntries = safeEntries.filter((entry) => {
+    const isDesdobramento =
+      String(entry?.category || "").toUpperCase() === "DESDOBRAMENTO" ||
+      String(entry?.origin || "").toUpperCase() === "UNIT";
+
+    if (!isDesdobramento) return true;
+
+    const sameUnitById =
+      nextUnitId && String(entry?.unitId || "").trim() === nextUnitId;
+    const sameUnitByCode =
+      nextUnitCode && normalizeCode(entry?.unitCode) === nextUnitCode;
+
+    return !(sameUnitById || sameUnitByCode);
+  });
+
+  return [nextEntry, ...filteredEntries].sort((a, b) => {
+    const dateA = normalizeToDate(a?.uploadedAt || a?.updatedAt || a?.createdAt);
+    const dateB = normalizeToDate(b?.uploadedAt || b?.updatedAt || b?.createdAt);
+    return (dateB?.getTime() || 0) - (dateA?.getTime() || 0);
+  });
+}
+
 function hasDocumentRetification(docItem) {
   const type = String(docItem?.lastRetificationType || "").toUpperCase();
 
   return (
     type === "UPDATED_FILE" ||
     type === "NEW_FILE" ||
+    type === "DELETED_FILE" ||
     !!docItem?.addedInRetification ||
     !!normalizeToDate(docItem?.retifiedAt) ||
-    !!normalizeToDate(docItem?.replacedAt)
+    !!normalizeToDate(docItem?.replacedAt) ||
+    !!normalizeToDate(docItem?.deletedAt)
   );
 }
 
@@ -684,7 +1025,8 @@ function getDocumentRetificationDate(docItem) {
   return (
     normalizeToDate(docItem?.retifiedAt) ||
     normalizeToDate(docItem?.replacedAt) ||
-    normalizeToDate(docItem?.addedInRetificationAt)
+    normalizeToDate(docItem?.addedInRetificationAt) ||
+    normalizeToDate(docItem?.deletedAt)
   );
 }
 
@@ -859,23 +1201,54 @@ function getPinMarkerIcon(status, selected = false) {
   });
 }
 
-function getEventOriginUnit(ev) {
+function isGenericUnitDescriptor(value) {
+  const normalized = normalizeText(value);
+  return (
+    normalized === "UNIDADE" ||
+    normalized === "ORIGEM" ||
+    normalized === "UNIDADE GESTORA" ||
+    normalized === "UNIDADE GERADORA" ||
+    normalized === "UNIDADE DE ORIGEM"
+  );
+}
+
+function getEventOriginUnit(ev, unitMap = {}) {
   if (!ev) return null;
 
+  const createdUnitById = ev?.createdByUnitId ? unitMap?.[ev.createdByUnitId] || null : null;
+  const pathCode = normalizeCode(getLeafCodeFromPath(ev?.unitPath));
+  const rawCreatedCode = normalizeCode(ev?.createdByUnitCode);
+  const resolvedUnitByCode =
+    createdUnitById ||
+    Object.values(unitMap || {}).find((unit) => {
+      const unitCode = getUnitCode(unit);
+      return unitCode && (unitCode === rawCreatedCode || unitCode === pathCode);
+    }) ||
+    null;
+
   const code =
-    normalizeCode(ev.createdByUnitCode) ||
+    rawCreatedCode ||
+    getUnitCode(createdUnitById) ||
+    getUnitCode(resolvedUnitByCode) ||
     (String(ev.originType || "").toUpperCase() === "AIO" ? "AIO" : "") ||
-    normalizeCode(getLeafCodeFromPath(ev.unitPath));
+    pathCode;
+
+  const explicitName = String(ev.createdByUnitName || "").trim();
+  const resolvedName =
+    getUnitLabel(createdUnitById) ||
+    getUnitLabel(resolvedUnitByCode) ||
+    "";
 
   const name =
-    String(ev.createdByUnitName || "").trim() ||
+    (explicitName && !isGenericUnitDescriptor(explicitName) ? explicitName : "") ||
+    resolvedName ||
     (code === "AIO" ? "Assessoria de Integração Operacional" : "");
 
   if (!code && !name) return null;
 
   return {
     key: `origin:${ev.createdByUnitId || code || name}`,
-    unitId: ev.createdByUnitId || null,
+    unitId: ev.createdByUnitId || createdUnitById?.id || resolvedUnitByCode?.id || null,
     code,
     name,
     isOrigin: true,
@@ -919,13 +1292,13 @@ function getEventInvolvedUnits(ev) {
   return Array.from(map.values());
 }
 
-function buildEventUnitBadges(ev) {
+function buildEventUnitBadges(ev, unitMap = {}) {
   if (!ev) return [];
 
   const result = [];
   const seen = new Set();
 
-  const origin = getEventOriginUnit(ev);
+  const origin = getEventOriginUnit(ev, unitMap);
   if (origin) {
     const originKey = origin.unitId || origin.code || origin.name;
     seen.add(originKey);
@@ -960,31 +1333,672 @@ function getDesdobramentoUnitCodes(documents) {
   return codes;
 }
 
-function getEventDirectTargetUnitIds(ev) {
+function getDesdobramentoUnitState(documents) {
+  const unitIds = new Set();
+  const unitCodes = new Set();
+
+  for (const docItem of documents || []) {
+    if (!shouldCountDocumentAsUnitDelivery(docItem)) continue;
+
+    const unitId = getDocumentLinkedUnitId(docItem);
+    const unitCode = getDocumentLinkedUnitCode(docItem);
+
+    if (unitId) unitIds.add(unitId);
+    if (unitCode) unitCodes.add(unitCode);
+  }
+
+  return { unitIds, unitCodes };
+}
+
+function getRequestedSubordinateUnitsFromSources(eventData, documents = []) {
+  const unitIds = new Set();
+  const unitCodes = new Set();
+  const unitNames = new Map();
+
+  const sourceDocs = [
+    ...toArray(documents),
+    ...toArray(eventData?.desdobramentos),
+  ];
+
+  sourceDocs.forEach((docItem) => {
+    if (!docItem) return;
+
+    const origin = getDocumentOriginValue(
+      docItem,
+      String(docItem?.category || "").toUpperCase() === "DESDOBRAMENTO"
+        ? "UNIT"
+        : ""
+    );
+
+    if (origin !== "UNIT") return;
+
+    toArray(docItem?.requestedSubordinateUnitIds).forEach((id) => {
+      const value = String(id || "").trim();
+      if (value) unitIds.add(value);
+    });
+
+    toArray(docItem?.requestedSubordinateUnitCodes).forEach((code) => {
+      const value = normalizeCode(code);
+      if (value) unitCodes.add(value);
+    });
+
+    if (Array.isArray(docItem?.requestedSubordinateUnits)) {
+      docItem.requestedSubordinateUnits.forEach((unit) => {
+        const unitId = String(unit?.unitId || unit?.id || "").trim();
+        const unitCode = normalizeCode(
+          unit?.unitCode || unit?.code || unit?.sigla || ""
+        );
+        const unitName = String(unit?.unitName || unit?.name || "").trim();
+
+        if (unitId) unitIds.add(unitId);
+        if (unitCode) unitCodes.add(unitCode);
+        if (unitId || unitCode) {
+          unitNames.set(unitId || unitCode, unitName || unitCode || "UNIDADE");
+        }
+      });
+    }
+  });
+
+  return {
+    unitIds: Array.from(unitIds),
+    unitCodes: Array.from(unitCodes),
+    unitNames,
+  };
+}
+
+function buildRequestedSubordinateUnitsPayload(units = []) {
+  const safeUnits = Array.isArray(units) ? units.filter(Boolean) : [];
+  const unitIds = [];
+  const unitCodes = [];
+  const unitNames = [];
+  const detailedUnits = [];
+
+  safeUnits.forEach((unit) => {
+    const unitId = String(unit?.id || unit?.unitId || "").trim();
+    const unitCode = getUnitCode(unit);
+    const unitName = getUnitLabel(unit);
+
+    if (unitId) unitIds.push(unitId);
+    if (unitCode) unitCodes.push(unitCode);
+    if (unitName) unitNames.push(unitName);
+
+    detailedUnits.push({
+      id: unitId || null,
+      unitId: unitId || null,
+      unitCode: unitCode || null,
+      code: unitCode || null,
+      sigla: unitCode || null,
+      unitName: unitName || null,
+      name: unitName || null,
+      parentUnitId: unit?.parentUnitId || null,
+    });
+  });
+
+  return {
+    requestedSubordinateUnitIds: Array.from(new Set(unitIds)),
+    requestedSubordinateUnitCodes: Array.from(new Set(unitCodes)),
+    requestedSubordinateUnitNames: Array.from(new Set(unitNames)),
+    requestedSubordinateUnits: detailedUnits,
+  };
+}
+
+function getRequestedSubordinateBadges(docItem, unitMap = {}) {
+  const map = new Map();
+
+  const pushUnit = (unitLike = {}) => {
+    const unitId = String(unitLike?.unitId || unitLike?.id || "").trim();
+    const unitCode = normalizeCode(
+      unitLike?.unitCode || unitLike?.code || unitLike?.sigla || ""
+    );
+
+    const resolvedUnit =
+      (unitId && unitMap?.[unitId]) ||
+      Object.values(unitMap || {}).find((unit) => getUnitCode(unit) === unitCode) ||
+      null;
+
+    const finalId = unitId || resolvedUnit?.id || "";
+    const finalCode = unitCode || getUnitCode(resolvedUnit);
+    const finalName =
+      String(
+        unitLike?.unitName ||
+          unitLike?.name ||
+          resolvedUnit?.name ||
+          resolvedUnit?.sigla ||
+          finalCode ||
+          "UNIDADE"
+      ).trim() || "UNIDADE";
+
+    const key = finalId || finalCode || finalName;
+    if (!key) return;
+
+    map.set(key, {
+      key,
+      unitId: finalId || null,
+      code: finalCode || null,
+      name: finalName,
+    });
+  };
+
+  toArray(docItem?.requestedSubordinateUnits).forEach(pushUnit);
+
+  toArray(docItem?.requestedSubordinateUnitIds).forEach((unitId) => {
+    pushUnit(unitMap?.[String(unitId || "").trim()] || { id: unitId });
+  });
+
+  toArray(docItem?.requestedSubordinateUnitCodes).forEach((unitCode) => {
+    const normalizedCode = normalizeCode(unitCode);
+    const resolvedUnit = Object.values(unitMap || {}).find(
+      (unit) => getUnitCode(unit) === normalizedCode
+    );
+
+    pushUnit(resolvedUnit || { code: normalizedCode });
+  });
+
+  toArray(docItem?.requestedSubordinateUnitNames).forEach((unitName) => {
+    const normalizedName = String(unitName || "").trim();
+    if (!normalizedName) return;
+
+    const resolvedUnit = Object.values(unitMap || {}).find(
+      (unit) => getUnitLabel(unit) === normalizedName
+    );
+
+    pushUnit(resolvedUnit || { name: normalizedName });
+  });
+
+  return Array.from(map.values()).sort((a, b) => {
+    const aLabel = `${a.code || ""} ${a.name || ""}`.trim();
+    const bLabel = `${b.code || ""} ${b.name || ""}`.trim();
+    return aLabel.localeCompare(bLabel, "pt-BR");
+  });
+}
+
+function documentMatchesRequestedSubordinate(docItem, subordinateBadge = {}) {
+  if (!docItem || docItem?.isDeleted) return false;
+
+  const docUnitId = getDocumentLinkedUnitId(docItem);
+  const docUnitCode = getDocumentLinkedUnitCode(docItem);
+
+  const badgeUnitId = String(subordinateBadge?.unitId || "").trim();
+  const badgeUnitCode = normalizeCode(subordinateBadge?.code);
+
+  return (
+    (badgeUnitId && docUnitId === badgeUnitId) ||
+    (badgeUnitCode && docUnitCode === badgeUnitCode)
+  );
+}
+
+function buildRequestedSubordinateTree(docItem, documents = [], unitMap = {}) {
+  const requestedBadges = getRequestedSubordinateBadges(docItem, unitMap);
+
+  return requestedBadges.map((badge) => {
+    const childDocument =
+      toArray(documents).find(
+        (candidate) =>
+          candidate &&
+          candidate.id !== docItem?.id &&
+          !candidate?.isDeleted &&
+          documentMatchesRequestedSubordinate(candidate, badge)
+      ) || null;
+
+    return {
+      key: `${docItem?.id || "doc"}-${badge.key}`,
+      badge,
+      document: childDocument,
+      hasDocument: !!childDocument,
+    };
+  });
+}
+
+
+
+function getEventDirectTargetUnitIds(ev, documents = []) {
   const ids = new Set();
 
   toArray(ev?.responsibleUnitIds).forEach((id) => {
-    if (id) ids.add(id);
+    if (id) ids.add(String(id).trim());
   });
 
   toArray(ev?.participantUnitIds).forEach((id) => {
-    if (id) ids.add(id);
+    if (id) ids.add(String(id).trim());
   });
+
+  if (ev?.responsibleUnitId) {
+    ids.add(String(ev.responsibleUnitId).trim());
+  }
 
   if (Array.isArray(ev?.involvedUnits)) {
     ev.involvedUnits.forEach((unit) => {
-      if (unit?.unitId) ids.add(unit.unitId);
+      if (unit?.unitId) ids.add(String(unit.unitId).trim());
     });
   }
 
   if (!ids.size && Array.isArray(ev?.responsibleUnits)) {
     ev.responsibleUnits.forEach((unit) => {
-      if (unit?.unitId) ids.add(unit.unitId);
+      if (unit?.unitId) ids.add(String(unit.unitId).trim());
     });
   }
 
+  getRequestedSubordinateUnitsFromSources(ev, documents).unitIds.forEach((id) => {
+    if (id) ids.add(String(id).trim());
+  });
+
   return ids;
 }
+
+function getEventDirectTargetUnitCodes(ev, documents = []) {
+  const codes = new Set();
+
+  const pushCode = (value) => {
+    const code = normalizeCode(value);
+    if (code) codes.add(code);
+  };
+
+  pushCode(ev?.responsibleUnitCode);
+  pushCode(ev?.participantUnitCode);
+
+  toArray(ev?.responsibleUnitCodes).forEach(pushCode);
+  toArray(ev?.participantUnitCodes).forEach(pushCode);
+
+  if (Array.isArray(ev?.involvedUnits)) {
+    ev.involvedUnits.forEach((unit) => {
+      pushCode(unit?.code || unit?.unitCode || unit?.sigla || getLeafCodeFromPath(unit?.unitPath));
+    });
+  }
+
+  if (!codes.size && Array.isArray(ev?.responsibleUnits)) {
+    ev.responsibleUnits.forEach((unit) => {
+      pushCode(unit?.code || unit?.unitCode || unit?.sigla || getLeafCodeFromPath(unit?.unitPath));
+    });
+  }
+
+  getRequestedSubordinateUnitsFromSources(ev, documents).unitCodes.forEach(pushCode);
+
+  return codes;
+}
+
+
+function getProfileScopeUnitIds(user, claims, permissions) {
+  return Array.from(
+    new Set(
+      [
+        String(user?.unitId || "").trim(),
+        String(user?.currentUnitId || "").trim(),
+        String(claims?.unitId || "").trim(),
+        String(claims?.currentUnitId || "").trim(),
+        String(permissions?.activeUnitId || "").trim(),
+        ...toArray(user?.unitIds).map((id) => String(id || "").trim()),
+        ...toArray(user?.accessScopeUnitIds).map((id) => String(id || "").trim()),
+        ...toArray(claims?.unitIds).map((id) => String(id || "").trim()),
+        ...toArray(claims?.accessScopeUnitIds).map((id) => String(id || "").trim()),
+        ...Array.from(permissions?.unitIds || []).map((id) => String(id || "").trim()),
+      ].filter(Boolean)
+    )
+  );
+}
+
+function getProfileScopeUnitCodes(user, claims, permissions, unitMap) {
+  const codes = new Set(
+    [
+      user?.unitCode,
+      user?.sigla,
+      claims?.unitCode,
+      claims?.command,
+      permissions?.activeUnitCode,
+      ...toArray(user?.unitCodes),
+      ...toArray(user?.accessScopeUnitCodes),
+      ...toArray(claims?.unitCodes),
+      ...toArray(claims?.accessScopeUnitCodes),
+      ...Array.from(permissions?.unitCodes || []),
+    ]
+      .map((value) => normalizeCode(value))
+      .filter(Boolean)
+  );
+
+  getProfileScopeUnitIds(user, claims, permissions).forEach((unitId) => {
+    const unit = unitMap?.[unitId];
+    const code = getUnitCode(unit);
+    if (code) codes.add(code);
+  });
+
+  return Array.from(codes);
+}
+
+function getEventDirectTargetUnits(ev, units, unitMap) {
+  const rows = [];
+  const seen = new Set();
+  const unitList = Array.isArray(units) ? units : [];
+
+  const pushUnit = (unitLike) => {
+    const unitId = String(unitLike?.unitId || unitLike?.id || "").trim();
+    const unitCode = normalizeCode(
+      unitLike?.code ||
+        unitLike?.unitCode ||
+        unitLike?.sigla ||
+        getLeafCodeFromPath(unitLike?.unitPath)
+    );
+
+    let resolvedUnit = null;
+
+    if (unitId && unitMap?.[unitId]) {
+      resolvedUnit = unitMap[unitId];
+    }
+
+    if (!resolvedUnit && unitCode) {
+      resolvedUnit =
+        unitList.find((unit) => getUnitCode(unit) === unitCode) || null;
+    }
+
+    const finalUnit =
+      resolvedUnit ||
+      {
+        id: unitId || unitCode,
+        code: unitCode,
+        name:
+          String(
+            unitLike?.name ||
+              unitLike?.unitName ||
+              unitLike?.label ||
+              unitCode ||
+              "UNIDADE"
+          ).trim() || "UNIDADE",
+        parentUnitId: unitLike?.parentUnitId || null,
+      };
+
+    const key = String(finalUnit?.id || unitId || unitCode || "").trim();
+    if (!key || seen.has(key)) return;
+
+    seen.add(key);
+    rows.push(finalUnit);
+  };
+
+  toArray(ev?.responsibleUnits).forEach(pushUnit);
+  toArray(ev?.participantUnits).forEach(pushUnit);
+  toArray(ev?.involvedUnits).forEach(pushUnit);
+  toArray(ev?.targetUnits).forEach(pushUnit);
+
+  Array.from(getEventDirectTargetUnitIds(ev)).forEach((unitId) => {
+    pushUnit({ id: unitId });
+  });
+
+  [
+    ...toArray(ev?.targetUnitIds),
+    ...toArray(ev?.involvedUnitIds),
+  ].forEach((unitId) => {
+    pushUnit({ id: unitId });
+  });
+
+  Array.from(getEventDirectTargetUnitCodes(ev)).forEach((unitCode) => {
+    pushUnit({ code: unitCode });
+  });
+
+  [
+    ...toArray(ev?.targetUnitCodes),
+    ...toArray(ev?.involvedUnitCodes),
+  ].forEach((unitCode) => {
+    pushUnit({ code: unitCode });
+  });
+
+  return rows.sort(sortUnits);
+}
+
+function buildEventUnitsInvolvementPatch(eventData, unitsToInclude = []) {
+  const safeUnits = Array.isArray(unitsToInclude) ? unitsToInclude.filter(Boolean) : [];
+
+  const existingInvolvedUnits = Array.isArray(eventData?.involvedUnits)
+    ? [...eventData.involvedUnits]
+    : [];
+
+  const involvedUnitIds = new Set(
+    toArray(eventData?.involvedUnitIds)
+      .map((id) => String(id || "").trim())
+      .filter(Boolean)
+  );
+
+  const involvedUnitCodes = new Set(
+    toArray(eventData?.involvedUnitCodes)
+      .map((code) => normalizeCode(code))
+      .filter(Boolean)
+  );
+
+  const visibleToUnitIds = new Set(
+    toArray(eventData?.visibleToUnitIds)
+      .map((id) => String(id || "").trim())
+      .filter(Boolean)
+  );
+
+  const visibleToUnitCodes = new Set(
+    toArray(eventData?.visibleToUnitCodes)
+      .map((code) => normalizeCode(code))
+      .filter(Boolean)
+  );
+
+  const addedUnits = [];
+
+  safeUnits.forEach((unit) => {
+    const unitId = String(unit?.id || unit?.unitId || "").trim();
+    const unitCode = getUnitCode(unit);
+    const unitName = getUnitLabel(unit);
+
+    const alreadyIncluded =
+      (unitId && involvedUnitIds.has(unitId)) ||
+      (unitCode && involvedUnitCodes.has(unitCode)) ||
+      existingInvolvedUnits.some((existing) => {
+        const existingId = String(existing?.unitId || existing?.id || "").trim();
+        const existingCode = normalizeCode(existing?.code || existing?.unitCode || existing?.sigla);
+        return (unitId && existingId === unitId) || (unitCode && existingCode === unitCode);
+      });
+
+    if (!alreadyIncluded) {
+      existingInvolvedUnits.push({
+        unitId: unitId || null,
+        code: unitCode || null,
+        unitCode: unitCode || null,
+        sigla: unitCode || null,
+        name: unitName || null,
+        unitName: unitName || null,
+        parentUnitId: unit?.parentUnitId || null,
+      });
+      addedUnits.push(unit);
+    }
+
+    if (unitId) {
+      involvedUnitIds.add(unitId);
+      visibleToUnitIds.add(unitId);
+    }
+
+    if (unitCode) {
+      involvedUnitCodes.add(unitCode);
+      visibleToUnitCodes.add(unitCode);
+    }
+  });
+
+  return {
+    patch: {
+      involvedUnits: existingInvolvedUnits,
+      involvedUnitIds: Array.from(involvedUnitIds),
+      involvedUnitCodes: Array.from(involvedUnitCodes),
+      visibleToUnitIds: Array.from(visibleToUnitIds),
+      visibleToUnitCodes: Array.from(visibleToUnitCodes),
+    },
+    addedUnits,
+  };
+}
+
+function eventMatchesProfileScope(ev, unitIds = [], unitCodes = []) {
+  if (!ev) return false;
+
+  const scopedIds = new Set(
+    toArray(unitIds)
+      .map((id) => String(id || "").trim())
+      .filter(Boolean)
+  );
+
+  const scopedCodes = new Set(
+    toArray(unitCodes)
+      .map((code) => normalizeCode(code))
+      .filter(Boolean)
+  );
+
+  const eventUnitIds = new Set([
+    ...Array.from(getEventUnitIds(ev) || []),
+    ...Array.from(getEventDirectTargetUnitIds(ev) || []),
+    ...toArray(ev?.visibleToUnitIds).map((id) => String(id || "").trim()),
+    ...toArray(ev?.targetUnitIds).map((id) => String(id || "").trim()),
+    ...toArray(ev?.involvedUnitIds).map((id) => String(id || "").trim()),
+    ...toArray(ev?.responsibleUnitIds).map((id) => String(id || "").trim()),
+    ...toArray(ev?.participantUnitIds).map((id) => String(id || "").trim()),
+    ...toArray(ev?.accessScopeUnitIds).map((id) => String(id || "").trim()),
+  ]);
+
+  const eventUnitCodes = new Set(
+    [
+      normalizeCode(ev?.createdByUnitCode),
+      normalizeCode(ev?.responsibleUnitCode),
+      normalizeCode(ev?.participantUnitCode),
+      ...Array.from(getEventDirectTargetUnitCodes(ev) || []),
+      ...toArray(ev?.visibleToUnitCodes),
+      ...toArray(ev?.targetUnitCodes),
+      ...toArray(ev?.involvedUnitCodes),
+      ...toArray(ev?.responsibleUnitCodes),
+      ...toArray(ev?.participantUnitCodes),
+      ...toArray(ev?.accessScopeUnitCodes),
+    ]
+      .map((code) => normalizeCode(code))
+      .filter(Boolean)
+  );
+
+  for (const id of scopedIds) {
+    if (eventUnitIds.has(id)) return true;
+  }
+
+  for (const code of scopedCodes) {
+    if (eventUnitCodes.has(code)) return true;
+  }
+
+  const unitPath = String(ev?.unitPath || "");
+  for (const code of scopedCodes) {
+    if (code && unitPath.includes(code)) return true;
+  }
+
+  return false;
+}
+
+function eventMatchesDirectLinkedUnit(ev, unitId = "", unitCode = "") {
+  if (!ev) return false;
+
+  const normalizedUnitId = String(unitId || "").trim();
+  const normalizedUnitCode = normalizeCode(unitCode);
+
+  const eventUnitIds = new Set([
+    ...Array.from(getEventUnitIds(ev) || []),
+    ...Array.from(getEventDirectTargetUnitIds(ev) || []),
+    ...toArray(ev?.visibleToUnitIds).map((id) => String(id || "").trim()),
+    ...toArray(ev?.targetUnitIds).map((id) => String(id || "").trim()),
+    ...toArray(ev?.involvedUnitIds).map((id) => String(id || "").trim()),
+    ...toArray(ev?.responsibleUnitIds).map((id) => String(id || "").trim()),
+    ...toArray(ev?.participantUnitIds).map((id) => String(id || "").trim()),
+  ]);
+
+  const eventUnitCodes = new Set(
+    [
+      normalizeCode(ev?.createdByUnitCode),
+      normalizeCode(ev?.responsibleUnitCode),
+      normalizeCode(ev?.participantUnitCode),
+      ...Array.from(getEventDirectTargetUnitCodes(ev) || []),
+      ...toArray(ev?.visibleToUnitCodes),
+      ...toArray(ev?.targetUnitCodes),
+      ...toArray(ev?.involvedUnitCodes),
+      ...toArray(ev?.responsibleUnitCodes),
+      ...toArray(ev?.participantUnitCodes),
+    ]
+      .map((code) => normalizeCode(code))
+      .filter(Boolean)
+  );
+
+  if (normalizedUnitId && eventUnitIds.has(normalizedUnitId)) return true;
+  if (normalizedUnitCode && eventUnitCodes.has(normalizedUnitCode)) return true;
+
+  return false;
+}
+
+function getDirectProfileUnitIdentity(user, claims) {
+  const unitId = [
+    String(user?.currentUnitId || "").trim(),
+    String(user?.unitId || "").trim(),
+    String(claims?.currentUnitId || "").trim(),
+    String(claims?.unitId || "").trim(),
+  ].find(Boolean) || "";
+
+  const unitCode = [
+    normalizeCode(user?.unitCode),
+    normalizeCode(user?.sigla),
+    normalizeCode(claims?.unitCode),
+    normalizeCode(claims?.command),
+  ].find(Boolean) || "";
+
+  return { unitId, unitCode };
+}
+
+function getPendingDesdobramentoUnits(ev, documents, unitMap) {
+  const directTargetIds = Array.from(getEventDirectTargetUnitIds(ev, documents));
+  if (!directTargetIds.length) return [];
+
+  const activeUnitDocumentIds = new Set();
+  const activeUnitDocumentCodes = new Set();
+
+  for (const docItem of documents || []) {
+    if (!shouldCountDocumentAsUnitDelivery(docItem)) continue;
+
+    const linkedUnitId = getDocumentLinkedUnitId(docItem);
+    const linkedUnitCode = getDocumentLinkedUnitCode(docItem);
+
+    if (linkedUnitId) {
+      activeUnitDocumentIds.add(String(linkedUnitId).trim());
+    }
+
+    if (linkedUnitCode) {
+      activeUnitDocumentCodes.add(normalizeCode(linkedUnitCode));
+    }
+  }
+
+  return directTargetIds
+    .map((unitId) => unitMap[unitId] || { id: unitId, code: "", name: "UNIDADE" })
+    .filter((unit) => {
+      const code = normalizeCode(getUnitCode(unit));
+      const id = String(unit.id || "").trim();
+
+      return !activeUnitDocumentIds.has(id) && (!code || !activeUnitDocumentCodes.has(code));
+    })
+    .sort(sortUnits);
+}
+
+
+function findActiveDesdobramentoForUnit(documents, unit) {
+  if (!unit) return null;
+
+  const targetUnitId = String(unit?.id || unit?.unitId || "").trim();
+  const targetUnitCode = normalizeCode(getUnitCode(unit));
+
+  return (
+    (documents || []).find((docItem) => {
+      const origin = getDocumentOriginValue(
+        docItem,
+        String(docItem?.category || "").toUpperCase() === "DESDOBRAMENTO"
+          ? "UNIT"
+          : ""
+      );
+
+      if (origin !== "UNIT") return false;
+      if (docItem?.isDeleted) return false;
+
+      return (
+        (targetUnitId && String(docItem?.unitId || "").trim() === targetUnitId) ||
+        (targetUnitCode && normalizeCode(docItem?.unitCode) === targetUnitCode)
+      );
+    }) || null
+  );
+}
+
 
 function MapViewportController({ events, selectedEventId }) {
   const map = useMap();
@@ -1081,10 +2095,10 @@ function DocumentFileIcon({ fileName }) {
       aria-label={`Arquivo ${extension}`}
       title={extension}
       style={{
-        width: 50,
-        minWidth: 50,
-        height: 58,
-        borderRadius: 14,
+        width: 38,
+        minWidth: 38,
+        height: 44,
+        borderRadius: 12,
         border: `1px solid ${border}`,
         background,
         position: "relative",
@@ -1094,8 +2108,8 @@ function DocumentFileIcon({ fileName }) {
       }}
     >
       <svg
-        width="28"
-        height="32"
+        width="22"
+        height="26"
         viewBox="0 0 24 24"
         fill="none"
         aria-hidden="true"
@@ -1127,12 +2141,12 @@ function DocumentFileIcon({ fileName }) {
           bottom: 4,
           left: "50%",
           transform: "translateX(-50%)",
-          fontSize: extension === "WORD" ? 8 : 9,
+          fontSize: extension === "WORD" ? 7 : 8,
           fontWeight: 800,
           letterSpacing: 0.3,
           color: "#fff",
           background: accent,
-          padding: "2px 6px",
+          padding: "2px 5px",
           borderRadius: 999,
           lineHeight: 1,
           boxShadow: "0 6px 16px rgba(0,0,0,0.15)",
@@ -1217,6 +2231,674 @@ function DeletedDocumentNotice({ docItem }) {
 
 const today = new Date();
 
+function PendingPulseStyle() {
+  useEffect(() => {
+    const styleId = "pending-desdobramento-pulse-style";
+
+    if (document.getElementById(styleId)) return;
+
+    const style = document.createElement("style");
+    style.id = styleId;
+    style.innerHTML = `
+      @keyframes pendingDesdobramentoPulse {
+        0% {
+          transform: scale(1);
+          box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35);
+        }
+        50% {
+          transform: scale(1.04);
+          box-shadow: 0 0 0 8px rgba(239, 68, 68, 0.10);
+        }
+        100% {
+          transform: scale(1);
+          box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }, []);
+
+  return null;
+}
+
+function MissingDesdobramentoTag({
+  text = "Desdobramento pendente",
+  small = false,
+}) {
+  return (
+    <>
+      <PendingPulseStyle />
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          padding: small ? "5px 10px" : "6px 12px",
+          borderRadius: 999,
+          background: "#fef2f2",
+          color: "#b91c1c",
+          border: "1px solid #fecaca",
+          fontSize: small ? 11 : 12,
+          fontWeight: 800,
+          lineHeight: 1,
+          whiteSpace: "nowrap",
+          animation: "pendingDesdobramentoPulse 1.4s ease-in-out infinite",
+          transformOrigin: "center",
+        }}
+      >
+        <span
+          style={{
+            width: small ? 8 : 9,
+            height: small ? 8 : 9,
+            borderRadius: 999,
+            background: "#ef4444",
+            flexShrink: 0,
+          }}
+        />
+        <span>{text}</span>
+      </span>
+    </>
+  );
+}
+
+function CompactDocumentUiStyle() {
+  useEffect(() => {
+    const styleId = "compact-document-ui-style";
+
+    if (document.getElementById(styleId)) return;
+
+    const style = document.createElement("style");
+    style.id = styleId;
+    style.innerHTML = `
+      .compactDocCard {
+        border-radius: 16px !important;
+      }
+
+      .compactDocCard .documentLeftAccent {
+        width: 5px !important;
+      }
+
+      .compactDocCard .documentItemMain {
+        padding: 6px 8px !important;
+        position: relative !important;
+      }
+
+      .compactDocCard .documentItemTitle {
+        gap: 10px !important;
+        align-items: flex-start !important;
+      }
+
+      .compactDocCard .documentTitleBlock strong {
+        font-size: 13px !important;
+        line-height: 1.1 !important;
+      }
+
+      .compactDocCard .documentTypeLabel {
+        font-size: 12px !important;
+      }
+
+      .compactDocCard .documentPills {
+        margin-top: 3px !important;
+        gap: 5px !important;
+      }
+
+      .compactDocCard .documentPill {
+        padding: 4px 8px !important;
+        font-size: 11px !important;
+      }
+
+      .compactDocCard .documentItemActions {
+        gap: 6px !important;
+        flex-wrap: wrap !important;
+        align-items: center !important;
+      }
+
+      .documentActionBtn.iconOnlyActionBtn,
+      .documentActionBtn.dangerSoft.iconOnlyActionBtn {
+        width: 34px !important;
+        min-width: 34px !important;
+        height: 34px !important;
+        padding: 0 !important;
+        justify-content: center !important;
+        border-radius: 10px !important;
+      }
+
+      .documentActionBtn.iconOnlyActionBtn span,
+      .documentActionBtn.dangerSoft.iconOnlyActionBtn span {
+        display: none !important;
+      }
+
+      .documentActionBtn.iconOnlyActionBtn svg,
+      .documentActionBtn.dangerSoft.iconOnlyActionBtn svg {
+        margin: 0 !important;
+        width: 15px !important;
+        height: 15px !important;
+      }
+
+      .compactUploadAction.iconOnlyActionBtn {
+        width: 36px !important;
+        min-width: 36px !important;
+        height: 36px !important;
+        padding: 0 !important;
+        justify-content: center !important;
+        border-radius: 10px !important;
+      }
+
+      .compactUploadAction.iconOnlyActionBtn span {
+        display: none !important;
+      }
+
+      .compactUploadAction.iconOnlyActionBtn svg {
+        margin: 0 !important;
+        width: 15px !important;
+        height: 15px !important;
+      }
+
+      .compactTreeNodeCard {
+        border-radius: 12px !important;
+        padding: 8px 10px !important;
+      }
+    `;
+
+    document.head.appendChild(style);
+  }, []);
+
+  return null;
+}
+
+function getDocumentOriginValue(docItem, fallback = "") {
+  const raw = String(
+    docItem?.origin ||
+      docItem?.originType ||
+      docItem?.documentScope ||
+      fallback ||
+      ""
+  )
+    .trim()
+    .toUpperCase();
+
+  if (
+    raw === "UNIT" ||
+    raw === "UNIDADE" ||
+    raw === "DESDOBRAMENTO"
+  ) {
+    return "UNIT";
+  }
+
+  if (raw === "AIO") {
+    return "AIO";
+  }
+
+  return String(fallback || "").trim().toUpperCase();
+}
+
+function getPlanningDocumentScope(docItem) {
+  const explicitScope = String(docItem?.documentScope || "")
+    .trim()
+    .toUpperCase();
+
+  if (explicitScope === "AIO" || explicitScope === "UNIT") {
+    return explicitScope;
+  }
+
+  const origin = String(docItem?.origin || docItem?.originType || "")
+    .trim()
+    .toUpperCase();
+
+  if (origin === "AIO") return "AIO";
+  if (origin.startsWith("UNIDADE")) return "UNIT";
+
+  return "AIO";
+}
+
+function isPlanningDocument(docItem) {
+  const category = String(docItem?.category || "")
+    .trim()
+    .toUpperCase();
+
+  if (category === "DESDOBRAMENTO") return false;
+
+  const eventRootField = String(docItem?.eventRootField || "").trim();
+  const documentGroup = String(docItem?.documentGroup || "")
+    .trim()
+    .toUpperCase();
+  const documentScope = String(docItem?.documentScope || "")
+    .trim()
+    .toUpperCase();
+  const origin = String(docItem?.origin || docItem?.originType || "")
+    .trim()
+    .toUpperCase();
+
+  if (eventRootField === "planningDocuments") return true;
+  if (documentGroup === "PLANNING") return true;
+  if (documentScope === "AIO") return true;
+  if (documentScope === "UNIT") return true;
+  if (origin === "AIO") return true;
+  if (origin.startsWith("UNIDADE")) return true;
+
+  return false;
+}
+
+function getPlanningDocumentSecondaryLabel(docItem) {
+  const scope = getPlanningDocumentScope(docItem);
+
+  if (scope === "AIO") return "AIO";
+
+  if (docItem?.unitCode && docItem?.unitName) {
+    return `${docItem.unitCode} - ${docItem.unitName}`;
+  }
+
+  return (
+    docItem?.unitCode ||
+    docItem?.unitName ||
+    docItem?.originUnitCode ||
+    docItem?.originUnitName ||
+    "UNIDADE"
+  );
+}
+
+function getDocumentLinkedUnitId(docItem) {
+  return String(
+    docItem?.unitId || docItem?.originUnitId || docItem?.uploadedByUnitId || ""
+  ).trim();
+}
+
+function getDocumentLinkedUnitCode(docItem) {
+  return normalizeCode(
+    docItem?.unitCode ||
+      docItem?.originUnitCode ||
+      docItem?.uploadedByUnitCode ||
+      getLeafCodeFromPath(docItem?.unitPath)
+  );
+}
+
+function shouldCountDocumentAsUnitDelivery(docItem) {
+  if (!docItem || docItem?.isDeleted) return false;
+
+  const origin = getDocumentOriginValue(
+    docItem,
+    String(docItem?.category || "").toUpperCase() === "DESDOBRAMENTO"
+      ? "UNIT"
+      : ""
+  );
+
+  if (origin === "UNIT") return true;
+
+  return isPlanningDocument(docItem) && getPlanningDocumentScope(docItem) === "UNIT";
+}
+
+
+function buildEmbeddedDesdobramentoDoc(eventId, rawDoc = {}, index = 0) {
+  const nowIso = new Date().toISOString();
+
+  return {
+    id:
+      String(rawDoc?.id || "").trim() ||
+      `embedded_desdobramento_${String(eventId || "evento")}_${index}`,
+
+    eventId: String(eventId || "").trim(),
+    eventRootField: "desdobramentos",
+
+    origin: "UNIT",
+    originType: "UNIT",
+    documentScope: "UNIT",
+    documentGroup: "UNIT",
+
+    category: "DESDOBRAMENTO",
+    documentType: normalizeDocumentType(
+      rawDoc?.documentType || rawDoc?.category,
+      "DESDOBRAMENTO"
+    ),
+
+    fileName: String(
+      rawDoc?.fileName || rawDoc?.originalFileName || "Documento"
+    ).trim(),
+
+    fileType: String(rawDoc?.fileType || rawDoc?.mimeType || "").trim(),
+    mimeType: String(rawDoc?.mimeType || rawDoc?.fileType || "").trim(),
+    size: Number(rawDoc?.size || 0),
+
+    storagePath: String(rawDoc?.storagePath || "").trim(),
+    downloadURL: String(rawDoc?.downloadURL || rawDoc?.fileUrl || "").trim(),
+
+    unitId: String(rawDoc?.unitId || rawDoc?.targetUnitId || "").trim() || null,
+    unitCode: String(
+      rawDoc?.unitCode || rawDoc?.targetUnitCode || ""
+    )
+      .trim()
+      .toUpperCase() || null,
+    unitName: String(
+      rawDoc?.unitName || rawDoc?.targetUnitName || "UNIDADE"
+    ).trim(),
+
+    unitPath: String(rawDoc?.unitPath || "").trim() || null,
+
+    uploadedByUid: String(rawDoc?.uploadedByUid || "").trim() || null,
+    uploadedByEmail: String(rawDoc?.uploadedByEmail || "").trim() || null,
+    uploadedByName: String(rawDoc?.uploadedByName || "").trim() || null,
+
+    uploadedAt: rawDoc?.uploadedAt || nowIso,
+    createdAt: rawDoc?.createdAt || rawDoc?.uploadedAt || nowIso,
+    updatedAt: rawDoc?.updatedAt || rawDoc?.uploadedAt || nowIso,
+
+    isDeleted: rawDoc?.isDeleted === true,
+    deletedAt: rawDoc?.deletedAt || null,
+    deletedByEmail: rawDoc?.deletedByEmail || null,
+    deletedByUid: rawDoc?.deletedByUid || null,
+    deletedByActorType: rawDoc?.deletedByActorType || null,
+
+    replacedAt: rawDoc?.replacedAt || null,
+    replacedByEmail: rawDoc?.replacedByEmail || null,
+    replacedByUid: rawDoc?.replacedByUid || null,
+
+    lastRetificationType: rawDoc?.lastRetificationType || null,
+    retifiedAt: rawDoc?.retifiedAt || null,
+    retifiedByEmail: rawDoc?.retifiedByEmail || null,
+    retifiedByUid: rawDoc?.retifiedByUid || null,
+
+    addedInRetification: rawDoc?.addedInRetification === true,
+    addedInRetificationAt: rawDoc?.addedInRetificationAt || null,
+
+    requestedSubordinateUnitIds: Array.isArray(rawDoc?.requestedSubordinateUnitIds)
+      ? rawDoc.requestedSubordinateUnitIds.filter(Boolean)
+      : [],
+    requestedSubordinateUnitCodes: Array.isArray(rawDoc?.requestedSubordinateUnitCodes)
+      ? rawDoc.requestedSubordinateUnitCodes.filter(Boolean)
+      : [],
+    requestedSubordinateUnitNames: Array.isArray(rawDoc?.requestedSubordinateUnitNames)
+      ? rawDoc.requestedSubordinateUnitNames.filter(Boolean)
+      : [],
+    requestedSubordinateUnits: Array.isArray(rawDoc?.requestedSubordinateUnits)
+      ? rawDoc.requestedSubordinateUnits.filter(Boolean)
+      : [],
+  };
+}
+
+function normalizeEmbeddedEventDocument(eventId, rawDoc = {}, source = "documents", index = 0) {
+  const rawScope = String(rawDoc?.documentScope || "").trim().toUpperCase();
+  const rawGroup = String(rawDoc?.documentGroup || "").trim().toUpperCase();
+  const rawOrigin = String(rawDoc?.origin || rawDoc?.originType || "")
+    .trim()
+    .toUpperCase();
+
+  const isDesdobramentoSource = source === "desdobramentos";
+  const isPlanningSource = source === "planningDocuments";
+
+  const inferredPlanningScope =
+    rawScope === "UNIT" || rawOrigin.startsWith("UNIDADE") ? "UNIT" : "AIO";
+
+  const origin = isDesdobramentoSource
+    ? "UNIT"
+    : rawOrigin ||
+      (isPlanningSource
+        ? inferredPlanningScope === "UNIT"
+          ? "UNIDADE_GESTORA"
+          : "AIO"
+        : "AIO");
+
+  const nowIso = new Date().toISOString();
+  const eventRootField =
+    source === "planningDocuments"
+      ? "planningDocuments"
+      : source === "desdobramentos"
+      ? "desdobramentos"
+      : "documents";
+
+  const documentScope = isDesdobramentoSource
+    ? "UNIT"
+    : isPlanningSource
+    ? inferredPlanningScope
+    : rawScope === "UNIT"
+    ? "UNIT"
+    : "AIO";
+
+  const documentGroup = isDesdobramentoSource
+    ? "UNIT"
+    : isPlanningSource
+    ? "PLANNING"
+    : rawGroup || (documentScope === "UNIT" ? "UNIT" : "AIO");
+
+  return {
+    id:
+      String(rawDoc?.id || "").trim() ||
+      `embedded_${source}_${String(eventId || "evento")}_${index}`,
+
+    eventId: String(eventId || "").trim(),
+    eventRootField,
+
+    origin,
+    originType: origin,
+    documentScope,
+    documentGroup,
+
+    category: isDesdobramentoSource
+      ? "DESDOBRAMENTO"
+      : String(rawDoc?.category || "DOCUMENTO").trim().toUpperCase(),
+
+    documentType: isDesdobramentoSource
+      ? normalizeDocumentType(rawDoc?.documentType, "DESDOBRAMENTO")
+      : normalizeDocumentType(rawDoc?.documentType || rawDoc?.category, "DOCUMENTO"),
+
+    fileName: String(
+      rawDoc?.fileName || rawDoc?.originalFileName || "Documento"
+    ).trim(),
+
+    fileType: String(rawDoc?.fileType || rawDoc?.mimeType || "").trim(),
+    mimeType: String(rawDoc?.mimeType || rawDoc?.fileType || "").trim(),
+    size: Number(rawDoc?.size || 0),
+
+    storagePath: String(rawDoc?.storagePath || "").trim(),
+    downloadURL: String(rawDoc?.downloadURL || rawDoc?.fileUrl || "").trim(),
+
+    unitId: String(rawDoc?.unitId || rawDoc?.targetUnitId || "").trim() || null,
+    unitCode: String(
+      rawDoc?.unitCode || rawDoc?.targetUnitCode || ""
+    )
+      .trim()
+      .toUpperCase() || null,
+    unitName: String(
+      rawDoc?.unitName || rawDoc?.targetUnitName || ""
+    ).trim() || null,
+
+    unitPath: String(rawDoc?.unitPath || "").trim() || null,
+
+    uploadedByUid: String(rawDoc?.uploadedByUid || "").trim() || null,
+    uploadedByEmail: String(rawDoc?.uploadedByEmail || "").trim() || null,
+    uploadedByName: String(rawDoc?.uploadedByName || "").trim() || null,
+
+    uploadedAt: rawDoc?.uploadedAt || nowIso,
+    createdAt: rawDoc?.createdAt || rawDoc?.uploadedAt || nowIso,
+    updatedAt: rawDoc?.updatedAt || rawDoc?.uploadedAt || nowIso,
+
+    isDeleted: rawDoc?.isDeleted === true,
+    deletedAt: rawDoc?.deletedAt || null,
+    deletedByEmail: rawDoc?.deletedByEmail || null,
+    deletedByUid: rawDoc?.deletedByUid || null,
+    deletedByActorType: rawDoc?.deletedByActorType || null,
+
+    replacedAt: rawDoc?.replacedAt || null,
+    replacedByEmail: rawDoc?.replacedByEmail || null,
+    replacedByUid: rawDoc?.replacedByUid || null,
+
+    lastRetificationType: rawDoc?.lastRetificationType || null,
+    retifiedAt: rawDoc?.retifiedAt || null,
+    retifiedByEmail: rawDoc?.retifiedByEmail || null,
+    retifiedByUid: rawDoc?.retifiedByUid || null,
+
+    addedInRetification: rawDoc?.addedInRetification === true,
+    addedInRetificationAt: rawDoc?.addedInRetificationAt || null,
+
+    requestedSubordinateUnitIds: Array.isArray(rawDoc?.requestedSubordinateUnitIds)
+      ? rawDoc.requestedSubordinateUnitIds.filter(Boolean)
+      : [],
+    requestedSubordinateUnitCodes: Array.isArray(rawDoc?.requestedSubordinateUnitCodes)
+      ? rawDoc.requestedSubordinateUnitCodes.filter(Boolean)
+      : [],
+    requestedSubordinateUnitNames: Array.isArray(rawDoc?.requestedSubordinateUnitNames)
+      ? rawDoc.requestedSubordinateUnitNames.filter(Boolean)
+      : [],
+    requestedSubordinateUnits: Array.isArray(rawDoc?.requestedSubordinateUnits)
+      ? rawDoc.requestedSubordinateUnits.filter(Boolean)
+      : [],
+  };
+}
+
+function getEmbeddedEventDocuments(ev) {
+  if (!ev) return [];
+
+  const eventId = String(ev?.id || "").trim();
+
+  const rootDocuments = toArray(ev?.documents).map((docItem, index) =>
+    normalizeEmbeddedEventDocument(eventId, docItem, "documents", index)
+  );
+
+  const rootPlanningDocuments = toArray(ev?.planningDocuments).map((docItem, index) =>
+    normalizeEmbeddedEventDocument(eventId, docItem, "planningDocuments", index)
+  );
+
+  const rootDesdobramentos = toArray(ev?.desdobramentos).map((docItem, index) =>
+    buildEmbeddedDesdobramentoDoc(eventId, docItem, index)
+  );
+
+  return [...rootDocuments, ...rootPlanningDocuments, ...rootDesdobramentos];
+}
+
+function mergeEventDocuments(primaryDocs = [], embeddedDocs = []) {
+  const map = new Map();
+
+  [...embeddedDocs, ...primaryDocs].forEach((docItem, index) => {
+    if (!docItem) return;
+
+    const key =
+      String(docItem?.id || "").trim() ||
+      String(docItem?.storagePath || "").trim() ||
+      String(docItem?.downloadURL || "").trim() ||
+      `doc_${index}`;
+
+    map.set(key, docItem);
+  });
+
+  return Array.from(map.values()).sort((a, b) => {
+    const da = normalizeToDate(a?.uploadedAt);
+    const db = normalizeToDate(b?.uploadedAt);
+    return (db?.getTime() || 0) - (da?.getTime() || 0);
+  });
+}
+
+function getEventEmbeddedDocuments(ev) {
+  return getEmbeddedEventDocuments(ev);
+}
+
+function mergeDisplayedDocuments(primaryDocs = [], embeddedDocs = []) {
+  const map = new Map();
+
+  [...embeddedDocs, ...primaryDocs].forEach((docItem, index) => {
+    if (!docItem) return;
+
+    const key =
+      String(docItem?.id || "").trim() ||
+      String(docItem?.storagePath || "").trim() ||
+      String(docItem?.downloadURL || "").trim() ||
+      `doc_${index}`;
+
+    map.set(key, docItem);
+  });
+
+  return Array.from(map.values()).sort((a, b) => {
+    const dateA = normalizeToDate(a?.uploadedAt);
+    const dateB = normalizeToDate(b?.uploadedAt);
+    return (dateB?.getTime() || 0) - (dateA?.getTime() || 0);
+  });
+}
+
+function isPermissionDeniedError(error) {
+  const code = String(error?.code || "").toLowerCase();
+  const message = String(error?.message || "").toLowerCase();
+
+  return (
+    code.includes("permission-denied") ||
+    code.includes("unauthorized") ||
+    message.includes("missing or insufficient permissions") ||
+    message.includes("does not have permission")
+  );
+}
+
+function getDocumentRootField(docItem) {
+  const explicitField = String(docItem?.eventRootField || "").trim();
+
+  // Só trate como documento embutido quando o próprio item vier marcado
+  // com o campo raiz do evento. Documentos da subcoleção
+  // events/{eventId}/documents/{docId} podem ser UNIT ou PLANNING também,
+  // mas precisam ser atualizados pela subcoleção, não pelo array do evento.
+  return explicitField || "";
+}
+
+function isSameEmbeddedRootDocument(rawDoc = {}, targetDoc = {}) {
+  const rawId = String(rawDoc?.id || "").trim();
+  const targetId = String(targetDoc?.id || "").trim();
+
+  if (rawId && targetId && rawId === targetId) return true;
+
+  const rawStoragePath = String(rawDoc?.storagePath || "").trim();
+  const targetStoragePath = String(targetDoc?.storagePath || "").trim();
+
+  if (rawStoragePath && targetStoragePath && rawStoragePath === targetStoragePath) {
+    return true;
+  }
+
+  const rawDownloadURL = String(rawDoc?.downloadURL || rawDoc?.fileUrl || "").trim();
+  const targetDownloadURL = String(
+    targetDoc?.downloadURL || targetDoc?.fileUrl || ""
+  ).trim();
+
+  if (rawDownloadURL && targetDownloadURL && rawDownloadURL === targetDownloadURL) {
+    return true;
+  }
+
+  const rawName = String(rawDoc?.fileName || rawDoc?.originalFileName || "").trim();
+  const targetName = String(
+    targetDoc?.fileName || targetDoc?.originalFileName || ""
+  ).trim();
+
+  const rawUnitId = String(rawDoc?.unitId || rawDoc?.targetUnitId || "").trim();
+  const targetUnitId = String(
+    targetDoc?.unitId || targetDoc?.targetUnitId || ""
+  ).trim();
+
+  const rawUnitCode = normalizeCode(rawDoc?.unitCode || rawDoc?.targetUnitCode);
+  const targetUnitCode = normalizeCode(
+    targetDoc?.unitCode || targetDoc?.targetUnitCode
+  );
+
+  if (!rawName || !targetName || rawName !== targetName) return false;
+
+  if (rawUnitId && targetUnitId && rawUnitId === targetUnitId) return true;
+  if (rawUnitCode && targetUnitCode && rawUnitCode === targetUnitCode) return true;
+
+  return false;
+}
+
+function patchEmbeddedRootDocumentList(currentList = [], targetDoc, patch) {
+  const list = Array.isArray(currentList) ? currentList : [];
+  let matched = false;
+
+  const nextList = list.map((item) => {
+    if (!isSameEmbeddedRootDocument(item, targetDoc)) {
+      return item;
+    }
+
+    matched = true;
+    const computedPatch =
+      typeof patch === "function" ? patch(item) : patch || {};
+
+    return {
+      ...item,
+      ...computedPatch,
+    };
+  });
+
+  return { nextList, matched };
+}
 export default function Home({
   user,
   claims,
@@ -1252,13 +2934,23 @@ export default function Home({
   const [calendarDragStart, setCalendarDragStart] = useState(null);
 
   const [desdobramentoUnitId, setDesdobramentoUnitId] = useState("");
+  const [desdobramentoSelectedUnitIds, setDesdobramentoSelectedUnitIds] = useState([]);
   const [desdobramentoFile, setDesdobramentoFile] = useState(null);
+  const [showGestoraSubordinateSelectorStep, setShowGestoraSubordinateSelectorStep] = useState(false);
+  const [showGestoraSubordinateSelectorInUpload, setShowGestoraSubordinateSelectorInUpload] = useState(false);
+  const [savingRequestedSubordinates, setSavingRequestedSubordinates] = useState(false);
 
+
+  const [desdobramentoDocumentType, setDesdobramentoDocumentType] =
+    useState("DESDOBRAMENTO");
+  const [replaceDocumentTypes, setReplaceDocumentTypes] = useState({});
+  const [replacePickerDocId, setReplacePickerDocId] = useState("");
   const permissions = useMemo(
     () => getCurrentUserPermissions(user, claims),
     [user, claims]
   );
 
+  
   useEffect(() => {
     async function loadUnits() {
       setLoadingUnits(true);
@@ -1284,7 +2976,6 @@ export default function Home({
 
     loadUnits();
   }, []);
-
   const unitMap = useMemo(() => {
     const map = {};
     for (const unit of units) {
@@ -1304,11 +2995,34 @@ export default function Home({
     return map;
   }, [units]);
 
+  const directProfileUnitIdentity = useMemo(() => {
+    const identity = getDirectProfileUnitIdentity(user, claims);
+    const resolvedUnitId =
+      identity.unitId ||
+      (identity.unitCode ? codeToUnitIdMap[normalizeCode(identity.unitCode)] || "" : "");
+
+    return {
+      unitId: resolvedUnitId,
+      unitCode: identity.unitCode,
+    };
+  }, [
+    user?.currentUnitId,
+    user?.unitId,
+    user?.unitCode,
+    user?.sigla,
+    claims?.currentUnitId,
+    claims?.unitId,
+    claims?.unitCode,
+    claims?.command,
+    codeToUnitIdMap,
+  ]);
+
   const resolvedPermissionUnitIds = useMemo(() => {
     const ids = new Set();
 
     permissions.unitIds.forEach((id) => {
-      if (id) ids.add(id);
+      const value = String(id || "").trim();
+      if (value) ids.add(value);
     });
 
     permissions.unitCodes.forEach((code) => {
@@ -1316,89 +3030,101 @@ export default function Home({
       if (resolvedId) ids.add(resolvedId);
     });
 
-    if (!ids.size && permissions.activeUnitCode) {
+    if (permissions.activeUnitId) {
+      ids.add(String(permissions.activeUnitId).trim());
+    }
+
+    if (permissions.activeUnitCode) {
       const resolvedId = codeToUnitIdMap[normalizeCode(permissions.activeUnitCode)];
       if (resolvedId) ids.add(resolvedId);
     }
 
-    if (permissions.activeUnitId) {
-      ids.add(permissions.activeUnitId);
+    if (directProfileUnitIdentity.unitId) {
+      ids.add(String(directProfileUnitIdentity.unitId).trim());
     }
 
-    return Array.from(ids);
+    if (directProfileUnitIdentity.unitCode) {
+      const resolvedId = codeToUnitIdMap[normalizeCode(directProfileUnitIdentity.unitCode)];
+      if (resolvedId) ids.add(resolvedId);
+    }
+
+    getProfileScopeUnitIds(user, claims, permissions).forEach((id) => {
+      const value = String(id || "").trim();
+      if (value) ids.add(value);
+    });
+
+    return Array.from(ids).filter(Boolean);
   }, [
     permissions.unitIds,
     permissions.unitCodes,
-    permissions.activeUnitCode,
     permissions.activeUnitId,
+    permissions.activeUnitCode,
     codeToUnitIdMap,
+    directProfileUnitIdentity.unitId,
+    directProfileUnitIdentity.unitCode,
+    user,
+    claims,
+    permissions,
   ]);
+
+  const resolvedPermissionUnitCodes = useMemo(() => {
+    return getProfileScopeUnitCodes(user, claims, permissions, unitMap);
+  }, [user, claims, permissions, unitMap]);
+
+  useEffect(() => {
+    console.log("USER HOME:", user);
+    console.log("CLAIMS HOME:", claims);
+    console.log("PERMISSIONS:", {
+      unitIds: Array.from(permissions.unitIds || []),
+      unitCodes: Array.from(permissions.unitCodes || []),
+      activeUnitId: permissions.activeUnitId,
+      activeUnitCode: permissions.activeUnitCode,
+      isGlobalReader: permissions.isGlobalReader,
+      isAIOUser: permissions.isAIOUser,
+      isAdminUser: permissions.isAdminUser,
+      isGestoraProfile: permissions.isGestoraProfile,
+      usesScopeVisibility: permissions.usesScopeVisibility,
+    });
+    console.log("directProfileUnitIdentity:", directProfileUnitIdentity);
+    console.log("resolvedPermissionUnitIds:", resolvedPermissionUnitIds);
+    console.log("resolvedPermissionUnitCodes:", resolvedPermissionUnitCodes);
+  }, [user, claims, permissions, directProfileUnitIdentity, resolvedPermissionUnitIds, resolvedPermissionUnitCodes]);
 
   async function loadEvents() {
     setLoading(true);
+    console.log("=== LOAD EVENTS ===");
+    console.log("permissions.isGlobalReader:", permissions.isGlobalReader);
+    console.log("directProfileUnitIdentity:", directProfileUnitIdentity);
+    console.log("resolvedPermissionUnitIds:", resolvedPermissionUnitIds);
 
     try {
       const refCollection = collection(db, "events");
+      const baseQuery = query(refCollection, orderBy("createdAt", "desc"), limit(500));
+      const snap = await getDocs(baseQuery);
 
-      if (permissions.isGlobalReader) {
-        const q = query(refCollection, orderBy("createdAt", "desc"), limit(500));
-        const snap = await getDocs(q);
+      let rows = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((row) => !row.isDeleted);
 
-        const rows = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
-          .filter((row) => !row.isDeleted)
-          .sort(sortEventsByPeriodDesc);
-
-        setEvents(rows);
-        return;
-      }
-
-      const queryUnitIds = Array.from(
-        new Set(resolvedPermissionUnitIds.filter(Boolean))
-      );
-
-      if (queryUnitIds.length === 0) {
-        setEvents([]);
-        return;
-      }
-
-      const chunks = chunkArray(queryUnitIds, 10);
-
-      const snapshots = await Promise.all(
-        chunks.map(async (chunk) => {
-          if (chunk.length === 1) {
-            return getDocs(
-              query(
-                refCollection,
-                where("visibleToUnitIds", "array-contains", chunk[0]),
-                limit(500)
+      if (!permissions.isGlobalReader) {
+        rows = rows.filter((row) =>
+          permissions.usesScopeVisibility
+            ? eventMatchesProfileScope(
+                row,
+                resolvedPermissionUnitIds,
+                resolvedPermissionUnitCodes
               )
-            );
-          }
+            : eventMatchesDirectLinkedUnit(
+                row,
+                directProfileUnitIdentity.unitId || permissions.activeUnitId,
+                directProfileUnitIdentity.unitCode || permissions.activeUnitCode
+              )
+        );
+      }
 
-          return getDocs(
-            query(
-              refCollection,
-              where("visibleToUnitIds", "array-contains-any", chunk),
-              limit(500)
-            )
-          );
-        })
-      );
-
-      const mergedMap = new Map();
-
-      snapshots.forEach((snap) => {
-        snap.docs.forEach((d) => {
-          const row = { id: d.id, ...d.data() };
-          if (!row.isDeleted) {
-            mergedMap.set(row.id, row);
-          }
-        });
-      });
-
-      const rows = Array.from(mergedMap.values()).sort(sortEventsByPeriodDesc);
+      rows = rows.sort(sortEventsByPeriodDesc);
       setEvents(rows);
+      console.log("EVENTOS CARREGADOS:", rows);
     } catch (e) {
       console.error("Erro ao carregar eventos:", e);
       setEvents([]);
@@ -1413,7 +3139,14 @@ export default function Home({
     }, 300);
 
     return () => clearTimeout(t);
-  }, [permissions.isGlobalReader, resolvedPermissionUnitIds.join("|")]);
+  }, [
+    permissions.isGlobalReader,
+    permissions.usesScopeVisibility,
+    resolvedPermissionUnitIds.join("|"),
+    resolvedPermissionUnitCodes.join("|"),
+    directProfileUnitIdentity.unitId,
+    directProfileUnitIdentity.unitCode,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1446,10 +3179,12 @@ export default function Home({
 
               return [ev.id, rows];
             } catch (error) {
-              console.error(
-                `Erro ao carregar documentos do evento ${ev.id}:`,
-                error
-              );
+              if (!isPermissionDeniedError(error)) {
+                console.error(
+                  `Erro ao carregar documentos do evento ${ev.id}:`,
+                  error
+                );
+              }
               return [ev.id, []];
             }
           })
@@ -1549,14 +3284,153 @@ export default function Home({
     return result;
   }, [rootUnits, childrenMap]);
 
+  const lockedProfileUnitId = useMemo(() => {
+    const directId = String(directProfileUnitIdentity.unitId || "").trim();
+    if (directId) return directId;
+
+    const activeId = String(permissions.activeUnitId || "").trim();
+    if (activeId) return activeId;
+
+    const directCode = normalizeCode(
+      directProfileUnitIdentity.unitCode || permissions.activeUnitCode || ""
+    );
+
+    if (directCode && codeToUnitIdMap[directCode]) {
+      return codeToUnitIdMap[directCode];
+    }
+
+    return "";
+  }, [
+    directProfileUnitIdentity.unitId,
+    directProfileUnitIdentity.unitCode,
+    permissions.activeUnitId,
+    permissions.activeUnitCode,
+    codeToUnitIdMap,
+  ]);
+
+  const lockedProfileUnitCode = useMemo(() => {
+    const unitFromMap = lockedProfileUnitId ? unitMap[lockedProfileUnitId] : null;
+    return normalizeCode(
+      getUnitCode(unitFromMap) ||
+        directProfileUnitIdentity.unitCode ||
+        permissions.activeUnitCode ||
+        ""
+    );
+  }, [
+    lockedProfileUnitId,
+    unitMap,
+    directProfileUnitIdentity.unitCode,
+    permissions.activeUnitCode,
+  ]);
+
+  const profileHasSubordinates = useMemo(() => {
+    if (!lockedProfileUnitId) return false;
+    return Array.isArray(childrenMap[lockedProfileUnitId]) && childrenMap[lockedProfileUnitId].length > 0;
+  }, [lockedProfileUnitId, childrenMap]);
+
+  const isHierarchyRestrictedViewer = useMemo(() => {
+    return !permissions.isAIOUser && !permissions.isGlobalReader && !profileHasSubordinates;
+  }, [
+    permissions.isAIOUser,
+    permissions.isGlobalReader,
+    profileHasSubordinates,
+  ]);
+
+
+  const visibleUnitOptions = useMemo(() => {
+    if (!lockedProfileUnitId) return [];
+
+    if (permissions.isGlobalReader || permissions.usesScopeVisibility) {
+      const allowedIds = new Set([lockedProfileUnitId]);
+      collectDescendantIds(lockedProfileUnitId, childrenMap, allowedIds);
+
+      const scopedOptions = unitOptions.filter((unit) =>
+        allowedIds.has(String(unit.id || "").trim())
+      );
+
+      if (scopedOptions.length > 0) return scopedOptions;
+    }
+
+    const directOption = unitOptions.find(
+      (unit) => String(unit.id || "").trim() === lockedProfileUnitId
+    );
+
+    if (directOption) return [directOption];
+
+    const unit = unitMap[lockedProfileUnitId];
+    if (!unit) return [];
+
+    const unitCode = getUnitCode(unit);
+    const labelBase = unitCode
+      ? `${unitCode} - ${getUnitLabel(unit)}`.trim()
+      : getUnitLabel(unit);
+
+    return [
+      {
+        id: lockedProfileUnitId,
+        label: labelBase,
+      },
+    ];
+  }, [
+    lockedProfileUnitId,
+    permissions.isGlobalReader,
+    permissions.usesScopeVisibility,
+    unitOptions,
+    unitMap,
+    childrenMap,
+  ]);
+
+  useEffect(() => {
+    setUnitFilterId((current) => {
+      const validIds = new Set(visibleUnitOptions.map((item) => String(item.id || "").trim()));
+
+      if (current && validIds.has(String(current || "").trim())) {
+        return current;
+      }
+
+      if (permissions.isGlobalReader || permissions.usesScopeVisibility) {
+        return lockedProfileUnitId || visibleUnitOptions[0]?.id || "";
+      }
+
+      return lockedProfileUnitId || "";
+    });
+  }, [
+    lockedProfileUnitId,
+    visibleUnitOptions,
+    permissions.isGlobalReader,
+    permissions.usesScopeVisibility,
+  ]);
+
   const selectedUnitScopeIds = useMemo(() => {
     if (!unitFilterId || !unitMap[unitFilterId]) return new Set();
+
+    if (!permissions.isGlobalReader && !permissions.usesScopeVisibility) {
+      return new Set([unitFilterId]);
+    }
 
     const ids = new Set([unitFilterId]);
     collectDescendantIds(unitFilterId, childrenMap, ids);
 
     return ids;
-  }, [unitFilterId, unitMap, childrenMap]);
+  }, [
+    unitFilterId,
+    unitMap,
+    childrenMap,
+    permissions.isGlobalReader,
+    permissions.usesScopeVisibility,
+  ]);
+
+  const selectedUnitScopeCodes = useMemo(() => {
+    const codes = new Set();
+
+    Array.from(selectedUnitScopeIds).forEach((id) => {
+      const unit = unitMap[id];
+      const code = getUnitCode(unit);
+      if (code) codes.add(code);
+    });
+
+    return Array.from(codes);
+  }, [selectedUnitScopeIds, unitMap]);
 
   const filteredEvents = useMemo(() => {
     let list = [...events];
@@ -1578,6 +3452,22 @@ export default function Home({
       const selectedUnit = unitMap[unitFilterId];
 
       list = list.filter((ev) => {
+        if (!permissions.isGlobalReader) {
+          if (permissions.usesScopeVisibility) {
+            return eventMatchesProfileScope(
+              ev,
+              Array.from(selectedUnitScopeIds),
+              selectedUnitScopeCodes
+            );
+          }
+
+          return eventMatchesDirectLinkedUnit(
+            ev,
+            directProfileUnitIdentity.unitId || selectedUnit?.id || unitFilterId,
+            directProfileUnitIdentity.unitCode || getUnitCode(selectedUnit)
+          );
+        }
+
         const eventUnitIds = getEventUnitIds(ev);
 
         for (const id of selectedUnitScopeIds) {
@@ -1602,7 +3492,20 @@ export default function Home({
     }
 
     return list.sort(sortEventsByPeriodDesc);
-  }, [events, from, to, search, unitFilterId, selectedUnitScopeIds, unitMap]);
+  }, [
+    events,
+    from,
+    to,
+    search,
+    unitFilterId,
+    selectedUnitScopeIds,
+    unitMap,
+    permissions.isGlobalReader,
+    permissions.usesScopeVisibility,
+    directProfileUnitIdentity.unitId,
+    directProfileUnitIdentity.unitCode,
+    selectedUnitScopeCodes,
+  ]);
 
   const mapEvents = useMemo(() => {
     return filteredEvents.filter((ev) => !!getEventCoordinates(ev));
@@ -1640,30 +3543,434 @@ export default function Home({
   }, [selectedEvent, isMapExpanded]);
 
   const selectedEventDocuments = useMemo(() => {
-    return (eventDocumentsMap[selectedEventId] || []).filter(
-      (docItem) => !docItem.isDeleted || shouldKeepDeletedDocumentVisible(docItem)
-    );
-  }, [eventDocumentsMap, selectedEventId]);
+    const currentEvent =
+      events.find((ev) => ev.id === selectedEventId) || selectedEvent || null;
 
-  const aioDocuments = useMemo(() => {
-    return selectedEventDocuments.filter(
-      (docItem) => String(docItem.origin || "").toUpperCase() === "AIO"
-    );
+    const subcollectionDocs = eventDocumentsMap[selectedEventId] || [];
+    const embeddedDocs = getEventEmbeddedDocuments(currentEvent);
+
+    return mergeEventDocuments(subcollectionDocs, embeddedDocs);
+  }, [eventDocumentsMap, selectedEventId, events, selectedEvent]);
+
+  const visibleSelectedEventDocuments = useMemo(() => {
+    return selectedEventDocuments.filter((docItem) => !docItem.isDeleted);
   }, [selectedEventDocuments]);
+
+  useEffect(() => {
+    const next = {};
+
+    selectedEventDocuments.forEach((docItem) => {
+      next[docItem.id] = getEffectiveDocumentType(docItem);
+    });
+
+    setReplaceDocumentTypes(next);
+  }, [selectedEventDocuments]);
+
+  const planningDocuments = useMemo(() => {
+    return visibleSelectedEventDocuments.filter((docItem) => {
+      return !docItem.isDeleted && isPlanningDocument(docItem);
+    });
+  }, [visibleSelectedEventDocuments]);
+
+  const planningDocumentsSectionTitle = useMemo(() => {
+    const hasUnitPlanning = planningDocuments.some(
+      (docItem) => getPlanningDocumentScope(docItem) === "UNIT"
+    );
+
+    return hasUnitPlanning
+      ? "Planejamento da unidade geradora"
+      : "Planejamento / Ordem da AIO";
+  }, [planningDocuments]);
+
+  const gestoraOwnPlanningDocument = useMemo(() => {
+    if (!permissions.isGestoraProfile || !selectedEvent) {
+      return null;
+    }
+
+    const ownUnitId = String(
+      lockedProfileUnitId ||
+        directProfileUnitIdentity.unitId ||
+        permissions.activeUnitId ||
+        ""
+    ).trim();
+
+    const ownUnitCode = normalizeCode(
+      getUnitCode(unitMap[ownUnitId]) ||
+        directProfileUnitIdentity.unitCode ||
+        permissions.activeUnitCode ||
+        ""
+    );
+
+    return (
+      planningDocuments.find((docItem) => {
+        if (!docItem || docItem.isDeleted) return false;
+        if (getPlanningDocumentScope(docItem) !== "UNIT") return false;
+
+        const docUnitId = getDocumentLinkedUnitId(docItem);
+        const docUnitCode = getDocumentLinkedUnitCode(docItem);
+
+        return (
+          (ownUnitId && docUnitId === ownUnitId) ||
+          (ownUnitCode && docUnitCode === ownUnitCode)
+        );
+      }) || null
+    );
+  }, [
+    permissions.isGestoraProfile,
+    selectedEvent,
+    planningDocuments,
+    lockedProfileUnitId,
+    directProfileUnitIdentity.unitId,
+    directProfileUnitIdentity.unitCode,
+    permissions.activeUnitId,
+    permissions.activeUnitCode,
+    unitMap,
+  ]);
 
   const desdobramentoDocuments = useMemo(() => {
-    return selectedEventDocuments.filter(
-      (docItem) => String(docItem.origin || "").toUpperCase() === "UNIT"
+    return visibleSelectedEventDocuments.filter((docItem) => {
+      const origin = getDocumentOriginValue(
+        docItem,
+        String(docItem?.category || "").toUpperCase() === "DESDOBRAMENTO"
+          ? "UNIT"
+          : ""
+      );
+
+      return (
+        !docItem.isDeleted &&
+        (
+          origin === "UNIT" ||
+          String(docItem?.category || "").toUpperCase() === "DESDOBRAMENTO"
+        )
+      );
+    });
+  }, [visibleSelectedEventDocuments]);
+
+  const visibleGestoraRootDesdobramentoIds = useMemo(() => {
+    const visibleIds = new Set();
+
+    const currentUnitId = String(
+      lockedProfileUnitId ||
+        directProfileUnitIdentity.unitId ||
+        permissions.activeUnitId ||
+        ""
+    ).trim();
+
+    const currentUnitCode = normalizeCode(
+      lockedProfileUnitCode ||
+        directProfileUnitIdentity.unitCode ||
+        permissions.activeUnitCode ||
+        ""
     );
-  }, [selectedEventDocuments]);
+
+    const managedScopeIds = new Set();
+    resolvedPermissionUnitIds.forEach((id) => {
+      const normalizedId = String(id || "").trim();
+      if (!normalizedId) return;
+      managedScopeIds.add(normalizedId);
+      if (unitMap[normalizedId]) {
+        collectDescendantIds(normalizedId, childrenMap, managedScopeIds);
+      }
+    });
+    if (lockedProfileUnitId) {
+      managedScopeIds.add(String(lockedProfileUnitId).trim());
+    }
+
+    const managedScopeCodes = new Set(
+      [
+        lockedProfileUnitCode,
+        directProfileUnitIdentity.unitCode,
+        permissions.activeUnitCode,
+        ...resolvedPermissionUnitCodes,
+      ]
+        .map((code) => normalizeCode(code))
+        .filter(Boolean)
+    );
+
+    desdobramentoDocuments.forEach((rootDoc) => {
+      const requestedBadges = getRequestedSubordinateBadges(rootDoc, unitMap);
+      if (!requestedBadges.length) return;
+
+      const docUnitId = getDocumentLinkedUnitId(rootDoc);
+      const docUnitCode = getDocumentLinkedUnitCode(rootDoc);
+
+      const isInsideViewerScope =
+        permissions.isAIOUser ||
+        permissions.isGlobalReader ||
+        (!isHierarchyRestrictedViewer && docUnitId && managedScopeIds.has(docUnitId)) ||
+        (!isHierarchyRestrictedViewer && docUnitCode && managedScopeCodes.has(docUnitCode));
+
+      const isMyGestoraOrder = requestedBadges.some((badge) => {
+        const badgeUnitId = String(badge?.unitId || "").trim();
+        const badgeUnitCode = normalizeCode(badge?.code);
+
+        return (
+          (currentUnitId && badgeUnitId === currentUnitId) ||
+          (currentUnitCode && badgeUnitCode === currentUnitCode)
+        );
+      });
+
+      if (isInsideViewerScope || isMyGestoraOrder) {
+        visibleIds.add(rootDoc.id);
+      }
+    });
+
+    return visibleIds;
+  }, [
+    desdobramentoDocuments,
+    unitMap,
+    childrenMap,
+    resolvedPermissionUnitIds,
+    resolvedPermissionUnitCodes,
+    permissions.isAIOUser,
+    permissions.isGlobalReader,
+    isHierarchyRestrictedViewer,
+    permissions.activeUnitId,
+    permissions.activeUnitCode,
+    lockedProfileUnitId,
+    lockedProfileUnitCode,
+    directProfileUnitIdentity.unitId,
+    directProfileUnitIdentity.unitCode,
+  ]);
+
+  const groupedSubordinateDocumentIds = useMemo(() => {
+    const groupedIds = new Set();
+
+    desdobramentoDocuments.forEach((rootDoc) => {
+      if (!visibleGestoraRootDesdobramentoIds.has(rootDoc.id)) return;
+
+      const subordinateTree = buildRequestedSubordinateTree(
+        rootDoc,
+        desdobramentoDocuments,
+        unitMap
+      );
+
+      subordinateTree.forEach((item) => {
+        if (item?.document?.id) {
+          groupedIds.add(item.document.id);
+        }
+      });
+    });
+
+    return groupedIds;
+  }, [
+    desdobramentoDocuments,
+    visibleGestoraRootDesdobramentoIds,
+    unitMap,
+  ]);
+
+  const displayedDesdobramentoDocuments = useMemo(() => {
+    const currentUnitId = String(
+      lockedProfileUnitId ||
+        directProfileUnitIdentity.unitId ||
+        permissions.activeUnitId ||
+        ""
+    ).trim();
+
+    const currentUnitCode = normalizeCode(
+      lockedProfileUnitCode ||
+        directProfileUnitIdentity.unitCode ||
+        permissions.activeUnitCode ||
+        ""
+    );
+
+    const managedScopeIds = new Set();
+    resolvedPermissionUnitIds.forEach((id) => {
+      const normalizedId = String(id || "").trim();
+      if (!normalizedId) return;
+      managedScopeIds.add(normalizedId);
+      if (unitMap[normalizedId]) {
+        collectDescendantIds(normalizedId, childrenMap, managedScopeIds);
+      }
+    });
+    if (lockedProfileUnitId) {
+      managedScopeIds.add(String(lockedProfileUnitId).trim());
+    }
+
+    const managedScopeCodes = new Set(
+      [
+        lockedProfileUnitCode,
+        directProfileUnitIdentity.unitCode,
+        permissions.activeUnitCode,
+        ...resolvedPermissionUnitCodes,
+      ]
+        .map((code) => normalizeCode(code))
+        .filter(Boolean)
+    );
+
+    const hasVisibleGestoraRoots = visibleGestoraRootDesdobramentoIds.size > 0;
+    const isRestrictedViewer = isHierarchyRestrictedViewer;
+
+    return desdobramentoDocuments.filter((docItem) => {
+      if (groupedSubordinateDocumentIds.has(docItem.id)) return false;
+
+      const isRequestedRoot =
+        getRequestedSubordinateBadges(docItem, unitMap).length > 0;
+
+      if (isRequestedRoot) {
+        return visibleGestoraRootDesdobramentoIds.has(docItem.id);
+      }
+
+      const docUnitId = getDocumentLinkedUnitId(docItem);
+      const docUnitCode = getDocumentLinkedUnitCode(docItem);
+      const isInsideViewerScope =
+        permissions.isAIOUser ||
+        permissions.isGlobalReader ||
+        (!isRestrictedViewer && docUnitId && managedScopeIds.has(docUnitId)) ||
+        (!isRestrictedViewer && docUnitCode && managedScopeCodes.has(docUnitCode));
+
+      if (hasVisibleGestoraRoots) {
+        if ((permissions.usesScopeVisibility || permissions.isGlobalReader) && !isRestrictedViewer) {
+          return !!isInsideViewerScope;
+        }
+
+        return (
+          (currentUnitId && docUnitId === currentUnitId) ||
+          (currentUnitCode && docUnitCode === currentUnitCode)
+        );
+      }
+
+      if ((permissions.usesScopeVisibility || permissions.isGlobalReader) && !isRestrictedViewer) {
+        return !!isInsideViewerScope;
+      }
+
+      return (
+        (currentUnitId && docUnitId === currentUnitId) ||
+        (currentUnitCode && docUnitCode === currentUnitCode)
+      );
+    });
+  }, [
+    desdobramentoDocuments,
+    groupedSubordinateDocumentIds,
+    visibleGestoraRootDesdobramentoIds,
+    unitMap,
+    childrenMap,
+    resolvedPermissionUnitIds,
+    resolvedPermissionUnitCodes,
+    permissions.isAIOUser,
+    permissions.isGlobalReader,
+    isHierarchyRestrictedViewer,
+    permissions.usesScopeVisibility,
+    isHierarchyRestrictedViewer,
+    permissions.activeUnitId,
+    permissions.activeUnitCode,
+    lockedProfileUnitId,
+    lockedProfileUnitCode,
+    directProfileUnitIdentity.unitId,
+    directProfileUnitIdentity.unitCode,
+  ]);
 
   const selectedEventUnitBadges = useMemo(() => {
-    return buildEventUnitBadges(selectedEvent);
-  }, [selectedEvent]);
+    return buildEventUnitBadges(selectedEvent, unitMap);
+  }, [selectedEvent, unitMap]);
 
-  const selectedEventUnitCodesWithDesdobramento = useMemo(() => {
-    return getDesdobramentoUnitCodes(selectedEventDocuments);
+  const selectedEventDesdobramentoState = useMemo(() => {
+    return getDesdobramentoUnitState(selectedEventDocuments);
   }, [selectedEventDocuments]);
+
+  const selectedEventPendingDesdobramentoUnits = useMemo(() => {
+    return getPendingDesdobramentoUnits(
+      selectedEvent,
+      selectedEventDocuments,
+      unitMap
+    );
+  }, [selectedEvent, selectedEventDocuments, unitMap]);
+
+  const profileAlertUnitId = useMemo(() => {
+    return String(
+      user?.unitId ||
+        claims?.unitId ||
+        claims?.currentUnitId ||
+        permissions.activeUnitId ||
+        ""
+    ).trim();
+  }, [
+    user?.unitId,
+    claims?.unitId,
+    claims?.currentUnitId,
+    permissions.activeUnitId,
+  ]);
+
+  const profileAlertUnit = useMemo(() => {
+    return unitMap[profileAlertUnitId] || null;
+  }, [profileAlertUnitId, unitMap]);
+
+  const profileAlertCandidateIds = useMemo(() => {
+    return Array.from(
+      new Set(
+        [
+          String(directProfileUnitIdentity.unitId || "").trim(),
+          String(profileAlertUnitId || "").trim(),
+          String(user?.unitId || "").trim(),
+          String(claims?.unitId || "").trim(),
+          String(claims?.currentUnitId || "").trim(),
+          String(permissions.activeUnitId || "").trim(),
+        ].filter(Boolean)
+      )
+    );
+  }, [
+    directProfileUnitIdentity.unitId,
+    profileAlertUnitId,
+    user?.unitId,
+    claims?.unitId,
+    claims?.currentUnitId,
+    permissions.activeUnitId,
+  ]);
+
+  const profileAlertCandidateCodes = useMemo(() => {
+    return Array.from(
+      new Set(
+        [
+          directProfileUnitIdentity.unitCode || "",
+          profileAlertUnit ? getUnitCode(profileAlertUnit) : "",
+          user?.unitCode || "",
+          claims?.unitCode || "",
+          claims?.command || "",
+        ]
+          .map((value) => normalizeCode(value))
+          .filter(Boolean)
+      )
+    );
+  }, [
+    directProfileUnitIdentity.unitCode,
+    profileAlertUnit,
+    user?.unitCode,
+    claims?.unitCode,
+    claims?.command,
+  ]);
+
+  const profilePendingUnitInSelectedEvent = useMemo(() => {
+    if (!selectedEvent) return null;
+
+    return (
+      selectedEventPendingDesdobramentoUnits.find((unit) => {
+        const candidateId = String(unit?.id || "").trim();
+        const candidateCode = normalizeCode(getUnitCode(unit));
+
+        return (
+          (candidateId && profileAlertCandidateIds.includes(candidateId)) ||
+          (candidateCode && profileAlertCandidateCodes.includes(candidateCode))
+        );
+      }) || null
+    );
+  }, [
+    selectedEvent,
+    selectedEventPendingDesdobramentoUnits,
+    profileAlertCandidateIds,
+    profileAlertCandidateCodes,
+  ]);
+
+  const showProfilePendingAlertInModal = useMemo(() => {
+    return !!profilePendingUnitInSelectedEvent;
+  }, [profilePendingUnitInSelectedEvent]);
+
+  const profileScopeUnitIds = useMemo(() => {
+    return getProfileScopeUnitIds(user, claims, permissions);
+  }, [user, claims, permissions]);
+
+  const profileScopeUnitCodes = useMemo(() => {
+    return getProfileScopeUnitCodes(user, claims, permissions, unitMap);
+  }, [user, claims, permissions, unitMap]);
 
   const userManagedScopeIds = useMemo(() => {
     const ids = new Set();
@@ -1680,25 +3987,210 @@ export default function Home({
   const eligibleDesdobramentoUnits = useMemo(() => {
     if (!selectedEvent || permissions.isAIOUser) return [];
 
-    const directTargetIds = getEventDirectTargetUnitIds(selectedEvent);
-    const rows = [];
-    const seen = new Set();
+    const directTargetUnits = getEventDirectTargetUnits(
+      selectedEvent,
+      units,
+      unitMap
+    );
 
-    directTargetIds.forEach((id) => {
-      if (!id || !userManagedScopeIds.has(id) || !unitMap[id] || seen.has(id)) {
-        return;
+    const directUnitId = String(
+      directProfileUnitIdentity.unitId || permissions.activeUnitId || ""
+    ).trim();
+    const directUnitCode = normalizeCode(
+      directProfileUnitIdentity.unitCode || permissions.activeUnitCode || ""
+    );
+
+    return directTargetUnits.filter((unit) => {
+      const unitId = String(unit?.id || "").trim();
+      const unitCode = getUnitCode(unit);
+
+      if (permissions.usesScopeVisibility) {
+        return (
+          (unitId && userManagedScopeIds.has(unitId)) ||
+          (unitCode && profileScopeUnitCodes.includes(unitCode))
+        );
       }
 
-      seen.add(id);
-      rows.push(unitMap[id]);
+      return (
+        (directUnitId && unitId === directUnitId) ||
+        (directUnitCode && unitCode === directUnitCode)
+      );
     });
+  }, [
+    selectedEvent,
+    permissions.isAIOUser,
+    permissions.usesScopeVisibility,
+    permissions.activeUnitId,
+    permissions.activeUnitCode,
+    units,
+    unitMap,
+    directProfileUnitIdentity.unitId,
+    directProfileUnitIdentity.unitCode,
+    userManagedScopeIds,
+    profileScopeUnitCodes,
+  ]);
 
-    return rows.sort(sortUnits);
-  }, [selectedEvent, permissions.isAIOUser, userManagedScopeIds, unitMap]);
+  const shouldShowGestoraSubordinateSelector = useMemo(() => {
+    if (!selectedEvent || permissions.isAIOUser || !permissions.isGestoraProfile) {
+      return false;
+    }
+
+    const ownUnitId = String(
+      lockedProfileUnitId ||
+        directProfileUnitIdentity.unitId ||
+        permissions.activeUnitId ||
+        ""
+    ).trim();
+
+    const ownUnitCode = normalizeCode(
+      getUnitCode(unitMap[ownUnitId]) ||
+        directProfileUnitIdentity.unitCode ||
+        permissions.activeUnitCode ||
+        ""
+    );
+
+    const createdByUnitId = String(selectedEvent?.createdByUnitId || "").trim();
+    const createdByUnitCode = normalizeCode(
+      selectedEvent?.createdByUnitCode || getLeafCodeFromPath(selectedEvent?.unitPath)
+    );
+
+    return !(
+      (ownUnitId && createdByUnitId === ownUnitId) ||
+      (ownUnitCode && createdByUnitCode === ownUnitCode)
+    );
+  }, [
+    selectedEvent,
+    permissions.isAIOUser,
+    permissions.isGestoraProfile,
+    lockedProfileUnitId,
+    directProfileUnitIdentity.unitId,
+    directProfileUnitIdentity.unitCode,
+    permissions.activeUnitId,
+    permissions.activeUnitCode,
+    unitMap,
+  ]);
+
+  const canViewGestoraSubordinateTree = useMemo(() => {
+    return !!selectedEvent;
+  }, [selectedEvent]);
+
+  const gestoraSubordinateSelectionUnits = useMemo(() => {
+    if (!shouldShowGestoraSubordinateSelector) return [];
+    if (!lockedProfileUnitId || !unitMap[lockedProfileUnitId]) return [];
+
+    const descendantIds = collectDescendantIds(lockedProfileUnitId, childrenMap, new Set());
+
+    return Array.from(descendantIds)
+      .map((unitId) => unitMap[unitId])
+      .filter(Boolean)
+      .sort(sortUnits);
+  }, [
+    shouldShowGestoraSubordinateSelector,
+    lockedProfileUnitId,
+    unitMap,
+    childrenMap,
+  ]);
+
+  const canGestoraManageRequestedSubordinates = useMemo(() => {
+    return (
+      permissions.isGestoraProfile &&
+      shouldShowGestoraSubordinateSelector &&
+      gestoraSubordinateSelectionUnits.length > 0
+    );
+  }, [
+    permissions.isGestoraProfile,
+    shouldShowGestoraSubordinateSelector,
+    gestoraSubordinateSelectionUnits,
+  ]);
+
+  const selectedSubordinateUnitsToInclude = useMemo(() => {
+    if (!shouldShowGestoraSubordinateSelector) return [];
+
+    const selectedIds = new Set(
+      desdobramentoSelectedUnitIds.map((id) => String(id || "").trim()).filter(Boolean)
+    );
+
+    return gestoraSubordinateSelectionUnits.filter((unit) =>
+      selectedIds.has(String(unit?.id || "").trim())
+    );
+  }, [
+    shouldShowGestoraSubordinateSelector,
+    desdobramentoSelectedUnitIds,
+    gestoraSubordinateSelectionUnits,
+  ]);
+
+  const profileLockedDesdobramentoUnit = useMemo(() => {
+    if (!selectedEvent || permissions.isAIOUser || permissions.isGestoraProfile) return null;
+
+    const directUnitId = String(
+      directProfileUnitIdentity.unitId || permissions.activeUnitId || ""
+    ).trim();
+    const directUnitCode = normalizeCode(
+      directProfileUnitIdentity.unitCode || permissions.activeUnitCode || ""
+    );
+
+    return (
+      eligibleDesdobramentoUnits.find((unit) => {
+        const unitId = String(unit?.id || "").trim();
+        const unitCode = getUnitCode(unit);
+
+        return (
+          (directUnitId && unitId === directUnitId) ||
+          (directUnitCode && unitCode === directUnitCode)
+        );
+      }) || null
+    );
+  }, [
+    selectedEvent,
+    permissions.isAIOUser,
+    permissions.isGestoraProfile,
+    permissions.activeUnitId,
+    permissions.activeUnitCode,
+    eligibleDesdobramentoUnits,
+    directProfileUnitIdentity.unitId,
+    directProfileUnitIdentity.unitCode,
+  ]);
 
   const selectedDesdobramentoUnit = useMemo(() => {
-    return unitMap[desdobramentoUnitId] || null;
-  }, [desdobramentoUnitId, unitMap]);
+    if (profileLockedDesdobramentoUnit) return profileLockedDesdobramentoUnit;
+
+    if (permissions.isGestoraProfile) {
+      const ownUnit = eligibleDesdobramentoUnits.find(
+        (unit) => String(unit?.id || "").trim() === String(lockedProfileUnitId || "").trim()
+      );
+      if (ownUnit) return ownUnit;
+    }
+
+    const normalizedSelectedId = String(desdobramentoUnitId || "").trim();
+    if (normalizedSelectedId) {
+      const matchedUnit = eligibleDesdobramentoUnits.find(
+        (unit) => String(unit?.id || "").trim() === normalizedSelectedId
+      );
+      if (matchedUnit) return matchedUnit;
+    }
+
+    return eligibleDesdobramentoUnits[0] || null;
+  }, [
+    profileLockedDesdobramentoUnit,
+    permissions.isGestoraProfile,
+    lockedProfileUnitId,
+    desdobramentoUnitId,
+    eligibleDesdobramentoUnits,
+  ]);
+
+  const selectedDesdobramentoUnitsForUpload = useMemo(() => {
+    if (!selectedEvent || permissions.isAIOUser) return [];
+    return selectedDesdobramentoUnit ? [selectedDesdobramentoUnit] : [];
+  }, [selectedEvent, permissions.isAIOUser, selectedDesdobramentoUnit]);
+
+  const selectedUploadUnitsWithExistingDocs = useMemo(() => {
+    return selectedDesdobramentoUnitsForUpload
+      .map((unit) => ({
+        unit,
+        doc: findActiveDesdobramentoForUnit(desdobramentoDocuments, unit),
+      }))
+      .filter((item) => !!item.doc);
+  }, [selectedDesdobramentoUnitsForUpload, desdobramentoDocuments]);
 
   const activeDesdobramentoForSelectedUnit = useMemo(() => {
     if (!selectedDesdobramentoUnit) return null;
@@ -1715,23 +4207,92 @@ export default function Home({
     );
   }, [desdobramentoDocuments, selectedDesdobramentoUnit]);
 
+  const previousDesdobramentoForSelectedUnit = useMemo(() => {
+    if (!selectedDesdobramentoUnit) return null;
+
+    const targetCode = normalizeCode(getUnitCode(selectedDesdobramentoUnit));
+
+    return (
+      selectedEventDocuments.find(
+        (docItem) =>
+          String(docItem.origin || "").toUpperCase() === "UNIT" &&
+          (
+            (docItem.unitId && docItem.unitId === selectedDesdobramentoUnit.id) ||
+            normalizeCode(docItem.unitCode) === targetCode
+          )
+      ) || null
+    );
+  }, [selectedEventDocuments, selectedDesdobramentoUnit]);
+
+  const gestoraRootDocumentForSubordinates = useMemo(() => {
+    if (activeDesdobramentoForSelectedUnit) return activeDesdobramentoForSelectedUnit;
+    if (gestoraOwnPlanningDocument) return gestoraOwnPlanningDocument;
+    return null;
+  }, [activeDesdobramentoForSelectedUnit, gestoraOwnPlanningDocument]);
+
+  const activeRequestedSubordinateUnitIds = useMemo(() => {
+    if (!gestoraRootDocumentForSubordinates) return [];
+
+    return Array.from(
+      new Set(
+        toArray(gestoraRootDocumentForSubordinates?.requestedSubordinateUnitIds)
+          .map((id) => String(id || "").trim())
+          .filter(Boolean)
+      )
+    );
+  }, [gestoraRootDocumentForSubordinates]);
+
+  useEffect(() => {
+    if (!shouldShowGestoraSubordinateSelector) {
+      setDesdobramentoSelectedUnitIds([]);
+      setShowGestoraSubordinateSelectorStep(false);
+      setShowGestoraSubordinateSelectorInUpload(false);
+      return;
+    }
+
+    if (!activeDesdobramentoForSelectedUnit) {
+      setDesdobramentoSelectedUnitIds([]);
+      setShowGestoraSubordinateSelectorStep(false);
+      return;
+    }
+
+    setDesdobramentoSelectedUnitIds(activeRequestedSubordinateUnitIds);
+  }, [
+    shouldShowGestoraSubordinateSelector,
+    activeDesdobramentoForSelectedUnit,
+    activeRequestedSubordinateUnitIds,
+  ]);
+  const selectedProfileUnitDesdobramentoPending = useMemo(() => {
+    if (!selectedDesdobramentoUnit) return false;
+
+    const selectedUnitId = String(selectedDesdobramentoUnit?.id || "").trim();
+    const selectedUnitCode = normalizeCode(getUnitCode(selectedDesdobramentoUnit));
+
+    return selectedEventPendingDesdobramentoUnits.some((unit) => {
+      const candidateId = String(unit?.id || "").trim();
+      const candidateCode = normalizeCode(getUnitCode(unit));
+
+      return (
+        (selectedUnitId && candidateId === selectedUnitId) ||
+        (selectedUnitCode && candidateCode === selectedUnitCode)
+      );
+    });
+  }, [selectedDesdobramentoUnit, selectedEventPendingDesdobramentoUnits]);
+
   const canShowUploadDesdobramentoSection =
     !!selectedEvent &&
     !permissions.isAIOUser &&
-    eligibleDesdobramentoUnits.length > 0;
+    selectedDesdobramentoUnitsForUpload.length > 0 &&
+    !(permissions.isGestoraProfile && !!gestoraOwnPlanningDocument);
 
   const selectedEventOriginDisplay = useMemo(() => {
     if (!selectedEvent) return "-";
 
-    const origin = getEventOriginUnit(selectedEvent);
+    const origin = getEventOriginUnit(selectedEvent, unitMap);
     if (!origin) return selectedEvent.originType || "-";
 
-    if (origin.code && origin.name) {
-      return `${origin.code} — ${origin.name}`;
-    }
-
     return origin.code || origin.name || selectedEvent.originType || "-";
-  }, [selectedEvent]);
+  }, [selectedEvent, unitMap]);
 
   const selectedEventProtocolLabel = useMemo(() => {
     if (!selectedEvent) return "-";
@@ -1780,10 +4341,6 @@ export default function Home({
     return value === "Não informado" ? value : `${value} pessoas`;
   }, [selectedEvent]);
 
-  const selectedPrimaryAioDocument = useMemo(() => {
-    return aioDocuments.find((docItem) => !docItem.isDeleted) || aioDocuments[0] || null;
-  }, [aioDocuments]);
-
   const visibleDesdobramentoDocuments = useMemo(() => {
     return desdobramentoDocuments.filter((docItem) => !docItem.isDeleted);
   }, [desdobramentoDocuments]);
@@ -1802,24 +4359,108 @@ export default function Home({
   useEffect(() => {
     if (!selectedEvent) {
       setDesdobramentoUnitId("");
+      setDesdobramentoSelectedUnitIds([]);
       setDesdobramentoFile(null);
+      setShowGestoraSubordinateSelectorStep(false);
+      setDesdobramentoDocumentType("DESDOBRAMENTO");
+      setReplaceDocumentTypes({});
       return;
     }
 
     setDesdobramentoFile(null);
+    setShowGestoraSubordinateSelectorStep(false);
+    setDesdobramentoDocumentType("DESDOBRAMENTO");
   }, [selectedEventId, selectedEvent]);
 
   useEffect(() => {
-    if (!eligibleDesdobramentoUnits.length) {
+    if (!selectedEvent) {
       setDesdobramentoUnitId("");
+      setDesdobramentoSelectedUnitIds([]);
       return;
     }
 
-    setDesdobramentoUnitId((prev) => {
-      const exists = eligibleDesdobramentoUnits.some((unit) => unit.id === prev);
-      return exists ? prev : eligibleDesdobramentoUnits[0].id;
+    const validUploadIds = eligibleDesdobramentoUnits
+      .map((unit) => String(unit?.id || "").trim())
+      .filter(Boolean);
+    const validUploadIdSet = new Set(validUploadIds);
+
+    if (profileLockedDesdobramentoUnit) {
+      const lockedId = String(profileLockedDesdobramentoUnit.id || "").trim();
+      setDesdobramentoUnitId(lockedId);
+    } else {
+      setDesdobramentoUnitId((current) => {
+        const normalizedCurrent = String(current || "").trim();
+        if (normalizedCurrent && validUploadIdSet.has(normalizedCurrent)) {
+          return normalizedCurrent;
+        }
+
+        return validUploadIds[0] || "";
+      });
+    }
+
+    if (shouldShowGestoraSubordinateSelector) {
+      const validSubordinateIds = gestoraSubordinateSelectionUnits
+        .map((unit) => String(unit?.id || "").trim())
+        .filter(Boolean);
+      const validSubordinateIdSet = new Set(validSubordinateIds);
+
+      setDesdobramentoSelectedUnitIds((current) =>
+        Array.from(
+          new Set(
+            (current || [])
+              .map((id) => String(id || "").trim())
+              .filter((id) => validSubordinateIdSet.has(id))
+          )
+        )
+      );
+      return;
+    }
+
+    setShowGestoraSubordinateSelectorStep(false);
+    setDesdobramentoSelectedUnitIds([]);
+  }, [
+    selectedEvent,
+    profileLockedDesdobramentoUnit,
+    eligibleDesdobramentoUnits,
+    shouldShowGestoraSubordinateSelector,
+    gestoraSubordinateSelectionUnits,
+  ]);
+
+  function toggleDesdobramentoUploadUnit(unitId) {
+    const normalizedId = String(unitId || "").trim();
+    if (!normalizedId || documentActionLoading === "new:desdobramento") return;
+
+    setDesdobramentoSelectedUnitIds((current) => {
+      const currentIds = (current || [])
+        .map((id) => String(id || "").trim())
+        .filter(Boolean);
+
+      const hasUnit = currentIds.includes(normalizedId);
+      const nextIds = hasUnit
+        ? currentIds.filter((id) => id !== normalizedId)
+        : [...currentIds, normalizedId];
+
+      if (!hasUnit) {
+        setDesdobramentoUnitId(normalizedId);
+      } else if (String(desdobramentoUnitId || "").trim() === normalizedId) {
+        setDesdobramentoUnitId(nextIds[0] || "");
+      }
+
+      return Array.from(new Set(nextIds));
     });
-  }, [eligibleDesdobramentoUnits]);
+  }
+
+  function selectAllEligibleDesdobramentoUnits() {
+    const nextIds = gestoraSubordinateSelectionUnits
+      .map((unit) => String(unit?.id || "").trim())
+      .filter(Boolean);
+
+    setDesdobramentoSelectedUnitIds(nextIds);
+  }
+
+  function clearEligibleDesdobramentoUnitsSelection() {
+    setDesdobramentoSelectedUnitIds([]);
+  }
 
   const totalEvents = filteredEvents.length;
   const ongoingCount = filteredEvents.filter(
@@ -1842,6 +4483,15 @@ export default function Home({
   const canManageSelectedEvent = useMemo(() => {
     return canManageEvent(selectedEvent, permissions, user);
   }, [selectedEvent, permissions, user]);
+
+  const canShowTopEventActions = useMemo(() => {
+    return canShowTopEventActionsForEvent(
+      selectedEvent,
+      permissions,
+      user,
+      directProfileUnitIdentity
+    );
+  }, [selectedEvent, permissions, user, directProfileUnitIdentity]);
 
   function goPrevMonth() {
     setCalendarMonth(
@@ -1965,7 +4615,7 @@ export default function Home({
     if (
       !selectedEvent ||
       !docItem ||
-      !canManageDocument(docItem, permissions, user)
+      !canManageDocument(docItem, permissions, user, directProfileUnitIdentity)
     ) {
       return;
     }
@@ -1979,6 +4629,56 @@ export default function Home({
     setDocumentActionLoading(`${docItem.id}:delete`);
 
     try {
+      const rootField = getDocumentRootField(docItem);
+
+      if (rootField) {
+        const currentEventState =
+          events.find((ev) => ev.id === selectedEvent.id) || selectedEvent;
+
+        const currentList = toArray(currentEventState?.[rootField]);
+        const nowIso = new Date().toISOString();
+
+        const { nextList, matched } = patchEmbeddedRootDocumentList(
+          currentList,
+          docItem,
+          {
+            isDeleted: true,
+            deletedAt: nowIso,
+            deletedByEmail: user?.email || null,
+            deletedByUid: user?.uid || null,
+            deletedByActorType: permissions.isAIOUser ? "AIO" : "UNIT",
+            updatedAt: nowIso,
+            updatedByEmail: user?.email || null,
+            updatedByUid: user?.uid || null,
+            lastRetificationType: "DELETED_FILE",
+            retifiedAt: nowIso,
+            retifiedByEmail: user?.email || null,
+            retifiedByUid: user?.uid || null,
+          }
+        );
+
+        if (matched) {
+          await updateDoc(doc(db, "events", selectedEvent.id), {
+            [rootField]: nextList,
+            updatedAt: serverTimestamp(),
+          });
+
+          setEvents((prev) =>
+            prev.map((ev) =>
+              ev.id === selectedEvent.id
+                ? {
+                    ...ev,
+                    [rootField]: nextList,
+                    updatedAt: new Date(),
+                  }
+                : ev
+            )
+          );
+
+          return;
+        }
+      }
+
       await updateDoc(
         doc(db, "events", selectedEvent.id, "documents", docItem.id),
         {
@@ -1990,6 +4690,10 @@ export default function Home({
           updatedAt: serverTimestamp(),
           updatedByEmail: user?.email || null,
           updatedByUid: user?.uid || null,
+          lastRetificationType: "DELETED_FILE",
+          retifiedAt: serverTimestamp(),
+          retifiedByEmail: user?.email || null,
+          retifiedByUid: user?.uid || null,
         }
       );
 
@@ -2007,6 +4711,10 @@ export default function Home({
                 updatedAt: new Date(),
                 updatedByEmail: user?.email || null,
                 updatedByUid: user?.uid || null,
+                lastRetificationType: "DELETED_FILE",
+                retifiedAt: new Date(),
+                retifiedByEmail: user?.email || null,
+                retifiedByUid: user?.uid || null,
               }
             : item
         );
@@ -2018,18 +4726,23 @@ export default function Home({
       });
     } catch (error) {
       console.error("Erro ao excluir documento:", error);
-      window.alert("Não foi possível excluir o documento.");
+      window.alert(
+        `Não foi possível excluir o documento.
+
+Código: ${error?.code || "-"}
+Mensagem: ${error?.message || "-"}`
+      );
     } finally {
       setDocumentActionLoading("");
     }
   }
 
-  async function handleReplaceDocument(docItem, file) {
+  async function handleReplaceDocument(docItem, file, selectedDocumentType) {
     if (
       !selectedEvent ||
       !docItem ||
       !file ||
-      !canManageDocument(docItem, permissions, user)
+      !canManageDocument(docItem, permissions, user, directProfileUnitIdentity)
     ) {
       return;
     }
@@ -2044,122 +4757,471 @@ export default function Home({
       return;
     }
 
+    const isUnitDocument = getDocumentOriginValue(docItem, "") === "UNIT";
+    const normalizedDocumentType = normalizeDocumentType(
+      selectedDocumentType,
+      isUnitDocument ? "DESDOBRAMENTO" : "DOCUMENTO"
+    );
+
     setDocumentActionLoading(`${docItem.id}:replace`);
 
     try {
-      const safeName = sanitizeFileName(file.name);
-      const isUnitDocument = String(docItem.origin || "").toUpperCase() === "UNIT";
+      const targetUnitId = String(
+        docItem.unitId || permissions.activeUnitId || ""
+      ).trim();
 
-      let storagePath = "";
-
-      if (isUnitDocument) {
-        const targetUnitId = String(
-          docItem.unitId || permissions.activeUnitId || ""
-        ).trim();
-
-        if (!targetUnitId) {
-          window.alert("Não foi possível identificar a unidade do documento.");
-          setDocumentActionLoading("");
-          return;
-        }
-
-        storagePath = `events/${selectedEvent.id}/documents/desdobramentos/${targetUnitId}/${Date.now()}_${safeName}`;
-      } else {
-        storagePath = `events/${selectedEvent.id}/documents/planejamento/${Date.now()}_${safeName}`;
-      }
-
-      const storageRef = ref(storage, storagePath);
-
-      await uploadBytes(storageRef, file);
-      const downloadURL = await getDownloadURL(storageRef);
-
-      await updateDoc(
-        doc(db, "events", selectedEvent.id, "documents", docItem.id),
-        {
-          fileName: file.name,
-          fileType: file.type || "",
-          storagePath,
-          downloadURL,
-          isDeleted: false,
-          deletedAt: null,
-          deletedByEmail: null,
-          deletedByUid: null,
-          deletedByActorType: null,
-          replacedAt: serverTimestamp(),
-          replacedByEmail: user?.email || null,
-          replacedByUid: user?.uid || null,
-          uploadedAt: serverTimestamp(),
-          uploadedByEmail: user?.email || null,
-          uploadedByUid: user?.uid || null,
-          updatedAt: serverTimestamp(),
-          updatedByEmail: user?.email || null,
-          updatedByUid: user?.uid || null,
-          lastRetificationType: "UPDATED_FILE",
-          retifiedAt: serverTimestamp(),
-          retifiedByEmail: user?.email || null,
-          retifiedByUid: user?.uid || null,
-        }
+      const targetUnitCode = normalizeCode(
+        docItem.unitCode || permissions.activeUnitCode
       );
 
-      setEventDocumentsMap((prev) => {
-        const docs = prev[selectedEvent.id] || [];
-        const updatedDocs = docs.map((item) =>
-          item.id === docItem.id
-            ? {
-                ...item,
-                fileName: file.name,
-                fileType: file.type || "",
-                storagePath,
-                downloadURL,
-                isDeleted: false,
-                deletedAt: null,
-                deletedByEmail: null,
-                deletedByUid: null,
-                deletedByActorType: null,
-                replacedAt: new Date(),
-                replacedByEmail: user?.email || null,
-                replacedByUid: user?.uid || null,
-                uploadedAt: new Date(),
-                uploadedByEmail: user?.email || null,
-                uploadedByUid: user?.uid || null,
-                updatedAt: new Date(),
-                updatedByEmail: user?.email || null,
-                updatedByUid: user?.uid || null,
-                lastRetificationType: "UPDATED_FILE",
-                retifiedAt: new Date(),
-                retifiedByEmail: user?.email || null,
-                retifiedByUid: user?.uid || null,
-              }
-            : item
+      const unitFolder = targetUnitId || targetUnitCode || "UNIDADE";
+
+      const uploadResult = await uploadDocumentToStorageWithFallback(
+        file,
+        buildStorageUploadCandidatePaths({
+          eventId: selectedEvent.id,
+          fileName: file.name,
+          category: isUnitDocument ? "DESDOBRAMENTO" : "DOCUMENTO",
+          documentType: normalizedDocumentType,
+          unitKey: isUnitDocument ? unitFolder : "",
+        })
+      );
+
+      const { storagePath, downloadURL } = uploadResult;
+
+      const rootField = getDocumentRootField(docItem);
+
+      if (rootField) {
+        const currentEventState =
+          events.find((ev) => ev.id === selectedEvent.id) || selectedEvent;
+
+        const currentList = toArray(currentEventState?.[rootField]);
+        const nowIso = new Date().toISOString();
+
+        const { nextList, matched } = patchEmbeddedRootDocumentList(
+          currentList,
+          docItem,
+          (currentItem) => ({
+            ...currentItem,
+            fileName: file.name,
+            fileType: file.type || "",
+            mimeType: file.type || "",
+            size: Number(file.size || 0),
+            storagePath,
+            downloadURL,
+            documentType: normalizedDocumentType,
+            category: isUnitDocument
+              ? currentItem?.category || "DESDOBRAMENTO"
+              : normalizedDocumentType,
+            isDeleted: false,
+            deletedAt: null,
+            deletedByEmail: null,
+            deletedByUid: null,
+            deletedByActorType: null,
+            replacedAt: nowIso,
+            replacedByEmail: user?.email || null,
+            replacedByUid: user?.uid || null,
+            uploadedAt: nowIso,
+            uploadedByEmail: user?.email || null,
+            uploadedByUid: user?.uid || null,
+            updatedAt: nowIso,
+            updatedByEmail: user?.email || null,
+            updatedByUid: user?.uid || null,
+            lastRetificationType: "UPDATED_FILE",
+            retifiedAt: nowIso,
+            retifiedByEmail: user?.email || null,
+            retifiedByUid: user?.uid || null,
+          })
         );
 
-        return {
-          ...prev,
-          [selectedEvent.id]: updatedDocs,
-        };
-      });
+        if (matched) {
+          await updateDoc(doc(db, "events", selectedEvent.id), {
+            [rootField]: nextList,
+            updatedAt: serverTimestamp(),
+          });
+
+          setEvents((prev) =>
+            prev.map((ev) =>
+              ev.id === selectedEvent.id
+                ? {
+                    ...ev,
+                    [rootField]: nextList,
+                    updatedAt: new Date(),
+                  }
+                : ev
+            )
+          );
+        } else {
+          await updateDoc(
+            doc(db, "events", selectedEvent.id, "documents", docItem.id),
+            {
+              fileName: file.name,
+              fileType: file.type || "",
+              mimeType: file.type || "",
+              size: Number(file.size || 0),
+              storagePath,
+              downloadURL,
+              documentType: normalizedDocumentType,
+              category: isUnitDocument
+                ? docItem.category || "DESDOBRAMENTO"
+                : normalizedDocumentType,
+              isDeleted: false,
+              deletedAt: null,
+              deletedByEmail: null,
+              deletedByUid: null,
+              deletedByActorType: null,
+              replacedAt: serverTimestamp(),
+              replacedByEmail: user?.email || null,
+              replacedByUid: user?.uid || null,
+              uploadedAt: serverTimestamp(),
+              uploadedByEmail: user?.email || null,
+              uploadedByUid: user?.uid || null,
+              updatedAt: serverTimestamp(),
+              updatedByEmail: user?.email || null,
+              updatedByUid: user?.uid || null,
+              lastRetificationType: "UPDATED_FILE",
+              retifiedAt: serverTimestamp(),
+              retifiedByEmail: user?.email || null,
+              retifiedByUid: user?.uid || null,
+            }
+          );
+
+          setEventDocumentsMap((prev) => {
+            const docs = prev[selectedEvent.id] || [];
+            const updatedDocs = docs.map((item) =>
+              item.id === docItem.id
+                ? {
+                    ...item,
+                    fileName: file.name,
+                    fileType: file.type || "",
+                    mimeType: file.type || "",
+                    size: Number(file.size || 0),
+                    storagePath,
+                    downloadURL,
+                    documentType: normalizedDocumentType,
+                    category: isUnitDocument
+                      ? item.category || "DESDOBRAMENTO"
+                      : normalizedDocumentType,
+                    isDeleted: false,
+                    deletedAt: null,
+                    deletedByEmail: null,
+                    deletedByUid: null,
+                    deletedByActorType: null,
+                    replacedAt: new Date(),
+                    replacedByEmail: user?.email || null,
+                    replacedByUid: user?.uid || null,
+                    uploadedAt: new Date(),
+                    uploadedByEmail: user?.email || null,
+                    uploadedByUid: user?.uid || null,
+                    updatedAt: new Date(),
+                    updatedByEmail: user?.email || null,
+                    updatedByUid: user?.uid || null,
+                    lastRetificationType: "UPDATED_FILE",
+                    retifiedAt: new Date(),
+                    retifiedByEmail: user?.email || null,
+                    retifiedByUid: user?.uid || null,
+                  }
+                : item
+            );
+
+            return {
+              ...prev,
+              [selectedEvent.id]: updatedDocs,
+            };
+          });
+        }
+      } else {
+        await updateDoc(
+          doc(db, "events", selectedEvent.id, "documents", docItem.id),
+          {
+            fileName: file.name,
+            fileType: file.type || "",
+            mimeType: file.type || "",
+            size: Number(file.size || 0),
+            storagePath,
+            downloadURL,
+            documentType: normalizedDocumentType,
+            category: isUnitDocument
+              ? docItem.category || "DESDOBRAMENTO"
+              : normalizedDocumentType,
+            isDeleted: false,
+            deletedAt: null,
+            deletedByEmail: null,
+            deletedByUid: null,
+            deletedByActorType: null,
+            replacedAt: serverTimestamp(),
+            replacedByEmail: user?.email || null,
+            replacedByUid: user?.uid || null,
+            uploadedAt: serverTimestamp(),
+            uploadedByEmail: user?.email || null,
+            uploadedByUid: user?.uid || null,
+            updatedAt: serverTimestamp(),
+            updatedByEmail: user?.email || null,
+            updatedByUid: user?.uid || null,
+            lastRetificationType: "UPDATED_FILE",
+            retifiedAt: serverTimestamp(),
+            retifiedByEmail: user?.email || null,
+            retifiedByUid: user?.uid || null,
+          }
+        );
+
+        setEventDocumentsMap((prev) => {
+          const docs = prev[selectedEvent.id] || [];
+          const updatedDocs = docs.map((item) =>
+            item.id === docItem.id
+              ? {
+                  ...item,
+                  fileName: file.name,
+                  fileType: file.type || "",
+                  mimeType: file.type || "",
+                  size: Number(file.size || 0),
+                  storagePath,
+                  downloadURL,
+                  documentType: normalizedDocumentType,
+                  category: isUnitDocument
+                    ? item.category || "DESDOBRAMENTO"
+                    : normalizedDocumentType,
+                  isDeleted: false,
+                  deletedAt: null,
+                  deletedByEmail: null,
+                  deletedByUid: null,
+                  deletedByActorType: null,
+                  replacedAt: new Date(),
+                  replacedByEmail: user?.email || null,
+                  replacedByUid: user?.uid || null,
+                  uploadedAt: new Date(),
+                  uploadedByEmail: user?.email || null,
+                  uploadedByUid: user?.uid || null,
+                  updatedAt: new Date(),
+                  updatedByEmail: user?.email || null,
+                  updatedByUid: user?.uid || null,
+                  lastRetificationType: "UPDATED_FILE",
+                  retifiedAt: new Date(),
+                  retifiedByEmail: user?.email || null,
+                  retifiedByUid: user?.uid || null,
+                }
+              : item
+          );
+
+          return {
+            ...prev,
+            [selectedEvent.id]: updatedDocs,
+          };
+        });
+      }
     } catch (error) {
       console.error("Erro ao substituir documento:", error);
-      window.alert("Não foi possível substituir o documento.");
+      const attemptedPaths = toArray(error?.attemptedStoragePaths);
+      const attemptedPathsMessage = attemptedPaths.length
+        ? `
+
+Caminhos testados:
+${attemptedPaths.join("\n")}`
+        : "";
+
+      window.alert(
+        `Não foi possível substituir o documento.
+
+Código: ${error?.code || "-"}
+Mensagem: ${error?.message || "-"}${attemptedPathsMessage}`
+      );
     } finally {
       setDocumentActionLoading("");
+      setReplacePickerDocId("");
+    }
+  }
+
+  async function handleSaveRequestedSubordinates({ showSuccess = true } = {}) {
+    if (
+      !selectedEvent ||
+      !permissions.isGestoraProfile ||
+      !canGestoraManageRequestedSubordinates ||
+      !gestoraRootDocumentForSubordinates
+    ) {
+      return { applied: false, selectedUnits: [] };
+    }
+
+    const selectedUnits = selectedSubordinateUnitsToInclude;
+    const requestedPayload = buildRequestedSubordinateUnitsPayload(selectedUnits);
+    const currentEventState =
+      events.find((ev) => ev.id === selectedEvent.id) || selectedEvent;
+
+    setSavingRequestedSubordinates(true);
+
+    try {
+      const targetRootDocument = gestoraRootDocumentForSubordinates;
+      const rootField = getDocumentRootField(targetRootDocument);
+      const nowIso = new Date().toISOString();
+
+      if (rootField) {
+        const currentList = toArray(currentEventState?.[rootField]);
+        const { nextList, matched } = patchEmbeddedRootDocumentList(
+          currentList,
+          targetRootDocument,
+          {
+            ...requestedPayload,
+            updatedAt: nowIso,
+            updatedByEmail: user?.email || null,
+            updatedByUid: user?.uid || null,
+          }
+        );
+
+        if (matched) {
+          await updateDoc(doc(db, "events", selectedEvent.id), {
+            [rootField]: nextList,
+            updatedAt: serverTimestamp(),
+          });
+
+          setEvents((prev) =>
+            prev.map((ev) =>
+              ev.id === selectedEvent.id
+                ? {
+                    ...ev,
+                    [rootField]: nextList,
+                    updatedAt: new Date(),
+                  }
+                : ev
+            )
+          );
+
+          setEventDocumentsMap((prev) => {
+            const docs = prev[selectedEvent.id] || [];
+            const updatedDocs = docs.map((item) =>
+              item.id === targetRootDocument.id
+                ? {
+                    ...item,
+                    ...requestedPayload,
+                    updatedAt: new Date(),
+                    updatedByEmail: user?.email || null,
+                    updatedByUid: user?.uid || null,
+                  }
+                : item
+            );
+
+            return {
+              ...prev,
+              [selectedEvent.id]: updatedDocs,
+            };
+          });
+        }
+      } else {
+        await updateDoc(
+          doc(db, "events", selectedEvent.id, "documents", targetRootDocument.id),
+          {
+            ...requestedPayload,
+            updatedAt: serverTimestamp(),
+            updatedByEmail: user?.email || null,
+            updatedByUid: user?.uid || null,
+          }
+        );
+
+        const mirroredEntry = {
+          ...buildEmbeddedDesdobramentoDoc(
+            selectedEvent.id,
+            targetRootDocument,
+            0
+          ),
+          ...requestedPayload,
+          updatedAt: nowIso,
+          updatedByEmail: user?.email || null,
+          updatedByUid: user?.uid || null,
+        };
+
+        const nextRootDesdobramentos = upsertEmbeddedDesdobramentoEntry(
+          currentEventState?.desdobramentos,
+          mirroredEntry
+        );
+
+        if (!isPlanningDocument(targetRootDocument)) {
+          await updateDoc(doc(db, "events", selectedEvent.id), {
+            desdobramentos: nextRootDesdobramentos,
+            updatedAt: serverTimestamp(),
+          });
+
+          setEvents((prev) =>
+            prev.map((ev) =>
+              ev.id === selectedEvent.id
+                ? {
+                    ...ev,
+                    desdobramentos: nextRootDesdobramentos,
+                    updatedAt: new Date(),
+                  }
+                : ev
+            )
+          );
+        }
+
+        setEventDocumentsMap((prev) => {
+          const docs = prev[selectedEvent.id] || [];
+          const updatedDocs = docs.map((item) =>
+            item.id === targetRootDocument.id
+              ? {
+                  ...item,
+                  ...requestedPayload,
+                  updatedAt: new Date(),
+                  updatedByEmail: user?.email || null,
+                  updatedByUid: user?.uid || null,
+                }
+              : item
+          );
+
+          return {
+            ...prev,
+            [selectedEvent.id]: updatedDocs,
+          };
+        });
+      }
+
+      setShowGestoraSubordinateSelectorStep(false);
+
+      if (showSuccess) {
+        if (selectedUnits.length > 0) {
+          window.alert(
+            `Subordinadas marcadas como pendentes: ${selectedUnits
+              .map((unit) => getUnitCode(unit) || getUnitLabel(unit))
+              .join(", ")}.`
+          );
+        } else {
+          window.alert("Nenhuma subordinada foi marcada como pendente.");
+        }
+      }
+
+      return { applied: true, selectedUnits };
+    } finally {
+      setSavingRequestedSubordinates(false);
     }
   }
 
   async function handleUploadDesdobramento() {
-    if (
-      !selectedEvent ||
-      !selectedDesdobramentoUnit ||
-      !desdobramentoFile ||
-      !canShowUploadDesdobramentoSection
-    ) {
+    if (!selectedEvent) {
+      window.alert("Nenhum evento foi selecionado.");
       return;
     }
 
-    if (activeDesdobramentoForSelectedUnit) {
+    if (!canShowUploadDesdobramentoSection) {
       window.alert(
-        "Já existe um desdobramento para esta unidade. Use a opção de substituir abaixo para editar o arquivo enviado."
+        "A seção de envio de desdobramento não está liberada para este perfil/unidade."
       );
+      return;
+    }
+
+    if (!desdobramentoFile) {
+      window.alert("Selecione o arquivo do desdobramento antes de enviar.");
+      return;
+    }
+
+    const authUid = String(user?.uid || "").trim();
+    const authEmail = String(user?.email || "").trim() || null;
+
+    if (!authUid) {
+      window.alert("Usuário não autenticado.");
+      return;
+    }
+
+    const targetUnits = selectedDesdobramentoUnit ? [selectedDesdobramentoUnit] : [];
+
+    if (!targetUnits.length) {
+      window.alert("Nenhuma unidade válida foi identificada para o desdobramento.");
       return;
     }
 
@@ -2173,30 +5235,153 @@ export default function Home({
       return;
     }
 
+    const eligibleUnitIds = new Set(
+      eligibleDesdobramentoUnits.map((unit) => String(unit?.id || "").trim()).filter(Boolean)
+    );
+    const eligibleUnitCodes = new Set(
+      eligibleDesdobramentoUnits.map((unit) => getUnitCode(unit)).filter(Boolean)
+    );
+
+    const disallowedUnits = targetUnits.filter((unit) => {
+      const unitId = String(unit?.id || "").trim();
+      const unitCode = getUnitCode(unit);
+
+      if (permissions.isGestoraProfile) {
+        return !(
+          (unitId && eligibleUnitIds.has(unitId)) ||
+          (unitCode && eligibleUnitCodes.has(unitCode))
+        );
+      }
+
+      const directUnitId = String(
+        directProfileUnitIdentity.unitId ||
+          permissions.activeUnitId ||
+          user?.unitId ||
+          claims?.unitId ||
+          claims?.currentUnitId ||
+          ""
+      ).trim();
+      const directUnitCode = normalizeCode(
+        directProfileUnitIdentity.unitCode ||
+          permissions.activeUnitCode ||
+          user?.unitCode ||
+          user?.sigla ||
+          claims?.unitCode ||
+          claims?.command ||
+          ""
+      );
+
+      return !(
+        (directUnitId && unitId && directUnitId === unitId) ||
+        (directUnitCode && unitCode && directUnitCode === unitCode)
+      );
+    });
+
+    if (disallowedUnits.length > 0) {
+      window.alert(
+        permissions.isGestoraProfile
+          ? "Selecione apenas unidades do seu escopo vinculadas ao evento."
+          : "O desdobramento só pode ser anexado pela própria unidade vinculada ao evento."
+      );
+      return;
+    }
+
+    const invalidEventUnits = targetUnits.filter((unit) => {
+      const unitId = String(unit?.id || "").trim();
+      const unitCode = getUnitCode(unit);
+
+      return !(
+        (unitId && getEventDirectTargetUnitIds(selectedEvent).has(unitId)) ||
+        (unitCode && getEventDirectTargetUnitCodes(selectedEvent).has(unitCode))
+      );
+    });
+
+    if (invalidEventUnits.length > 0) {
+      window.alert(
+        `As seguintes unidades não estão incluídas diretamente neste evento: ${invalidEventUnits
+          .map((unit) => getUnitCode(unit) || getUnitLabel(unit))
+          .join(", ")}.`
+      );
+      return;
+    }
+
+    const existingDocsByUnit = targetUnits
+      .map((unit) => ({
+        unit,
+        doc: findActiveDesdobramentoForUnit(desdobramentoDocuments, unit),
+      }))
+      .filter((item) => !!item.doc);
+
+    const unitsToCreate = targetUnits.filter((unit) => {
+      const unitId = String(unit?.id || "").trim();
+      const unitCode = getUnitCode(unit);
+
+      return !existingDocsByUnit.some((item) => {
+        const existingUnitId = String(item.unit?.id || "").trim();
+        const existingUnitCode = getUnitCode(item.unit);
+        return (unitId && existingUnitId === unitId) || (unitCode && existingUnitCode === unitCode);
+      });
+    });
+
+    if (!unitsToCreate.length) {
+      window.alert(
+        `Já existe desdobramento para as unidades selecionadas: ${existingDocsByUnit
+          .map((item) => getUnitCode(item.unit) || getUnitLabel(item.unit))
+          .join(", ")}. Use a opção de substituir na lista de documentos.`
+      );
+      return;
+    }
+
+    const normalizedDocumentType = normalizeDocumentType(
+      desdobramentoDocumentType,
+      "DESDOBRAMENTO"
+    );
+
+    if (
+      canGestoraManageRequestedSubordinates &&
+      !showGestoraSubordinateSelectorInUpload
+    ) {
+      setDesdobramentoSelectedUnitIds(activeRequestedSubordinateUnitIds);
+      setShowGestoraSubordinateSelectorInUpload(true);
+      return;
+    }
+
     setDocumentActionLoading("new:desdobramento");
 
     try {
-      const safeName = sanitizeFileName(desdobramentoFile.name);
-      const storagePath = `events/${selectedEvent.id}/documents/desdobramentos/${selectedDesdobramentoUnit.id}/${Date.now()}_${safeName}`;
-      const storageRef = ref(storage, storagePath);
+      const createdLocalPayloads = [];
+      let workingEventDesdobramentos =
+        toArray((events.find((ev) => ev.id === selectedEvent.id) || selectedEvent)?.desdobramentos);
+      let eventRootWasUpdated = false;
+      let shouldSyncEventRootDesdobramentos = false;
 
-      await uploadBytes(storageRef, desdobramentoFile);
-      const downloadURL = await getDownloadURL(storageRef);
+      for (const targetUnit of unitsToCreate) {
+        const targetUnitId = String(targetUnit?.id || "").trim();
+        const targetUnitCode = getUnitCode(targetUnit);
+        const unitFolder = targetUnitId || targetUnitCode || "UNIDADE";
 
-      const newDocRef = doc(collection(db, "events", selectedEvent.id, "documents"));
+        const uploadResult = await uploadDocumentToStorageWithFallback(
+          desdobramentoFile,
+          buildStorageUploadCandidatePaths({
+            eventId: selectedEvent.id,
+            fileName: desdobramentoFile.name,
+            category: "DESDOBRAMENTO",
+            documentType: normalizedDocumentType,
+            unitKey: unitFolder,
+          })
+        );
 
-      const payload = {
-        fileName: desdobramentoFile.name,
-        fileType: desdobramentoFile.type || "",
-        category: "DESDOBRAMENTO",
-        origin: "UNIT",
-        unitId: selectedDesdobramentoUnit.id,
-        unitCode: getUnitCode(selectedDesdobramentoUnit),
-        unitName: getUnitLabel(selectedDesdobramentoUnit),
-        unitPath: (() => {
+        const { storagePath, downloadURL } = uploadResult;
+        const documentRef = doc(collection(db, "events", selectedEvent.id, "documents"));
+        const documentId = documentRef.id;
+
+        const hadPreviousDocumentForUnit =
+          !!findActiveDesdobramentoForUnit(selectedEventDocuments, targetUnit);
+
+        const unitPath = (() => {
           const parts = [];
           const visited = new Set();
-          let current = selectedDesdobramentoUnit;
+          let current = targetUnit;
 
           while (current && !visited.has(current.id)) {
             visited.add(current.id);
@@ -2206,30 +5391,208 @@ export default function Home({
           }
 
           return parts.join(" > ");
-        })(),
-        storagePath,
-        downloadURL,
-        uploadedByUid: user?.uid || null,
-        uploadedByEmail: user?.email || null,
-        uploadedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        updatedByUid: user?.uid || null,
-        updatedByEmail: user?.email || null,
-        isDeleted: false,
-      };
+        })();
 
-      await setDoc(newDocRef, payload);
+        const nowIso = new Date().toISOString();
 
-      const localPayload = {
-        id: newDocRef.id,
-        ...payload,
-        uploadedAt: new Date(),
-        updatedAt: new Date(),
-      };
+        const requestedPayloadForCurrentUpload =
+          permissions.isGestoraProfile &&
+          shouldShowGestoraSubordinateSelector &&
+          selectedDesdobramentoUnit &&
+          String(targetUnitId || "").trim() === String(selectedDesdobramentoUnit?.id || "").trim()
+            ? buildRequestedSubordinateUnitsPayload(selectedSubordinateUnitsToInclude)
+            : null;
+
+        const payload = {
+          eventId: selectedEvent.id,
+          fileName: desdobramentoFile.name,
+          fileType: desdobramentoFile.type || "",
+          mimeType: desdobramentoFile.type || "",
+          size: Number(desdobramentoFile.size || 0),
+          category: "DESDOBRAMENTO",
+          documentType: normalizedDocumentType,
+          documentScope: "UNIT",
+          origin: "UNIT",
+          unitId: targetUnitId || null,
+          unitCode: targetUnitCode || null,
+          unitName: getUnitLabel(targetUnit),
+          unitPath,
+          storagePath,
+          downloadURL,
+          uploadedByUid: authUid,
+          uploadedByEmail: authEmail,
+          uploadedByUnitId: targetUnitId || null,
+          uploadedByUnitCode: targetUnitCode || null,
+          uploadedByUnitName: getUnitLabel(targetUnit),
+          updatedByUid: authUid,
+          updatedByEmail: authEmail,
+          ...(requestedPayloadForCurrentUpload || {}),
+          uploadedAt: serverTimestamp(),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          isDeleted: false,
+          lastRetificationType: hadPreviousDocumentForUnit ? "NEW_FILE" : null,
+          retifiedAt: hadPreviousDocumentForUnit ? serverTimestamp() : null,
+          retifiedByEmail: hadPreviousDocumentForUnit ? authEmail : null,
+          retifiedByUid: hadPreviousDocumentForUnit ? authUid : null,
+          addedInRetification: hadPreviousDocumentForUnit,
+          addedInRetificationAt: hadPreviousDocumentForUnit
+            ? serverTimestamp()
+            : null,
+        };
+
+        const embeddedPayload = {
+          id: documentId,
+          eventId: selectedEvent.id,
+          fileName: desdobramentoFile.name,
+          fileType: desdobramentoFile.type || "",
+          mimeType: desdobramentoFile.type || "",
+          size: Number(desdobramentoFile.size || 0),
+          category: "DESDOBRAMENTO",
+          documentType: normalizedDocumentType,
+          documentScope: "UNIT",
+          origin: "UNIT",
+          unitId: targetUnitId || null,
+          unitCode: targetUnitCode || null,
+          unitName: getUnitLabel(targetUnit),
+          unitPath,
+          storagePath,
+          downloadURL,
+          uploadedByUid: authUid,
+          uploadedByEmail: authEmail,
+          uploadedByUnitId: targetUnitId || null,
+          uploadedByUnitCode: targetUnitCode || null,
+          uploadedByUnitName: getUnitLabel(targetUnit),
+          updatedByUid: authUid,
+          updatedByEmail: authEmail,
+          ...(requestedPayloadForCurrentUpload || {}),
+          uploadedAt: nowIso,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+          isDeleted: false,
+          lastRetificationType: hadPreviousDocumentForUnit ? "NEW_FILE" : null,
+          retifiedAt: hadPreviousDocumentForUnit ? nowIso : null,
+          retifiedByEmail: hadPreviousDocumentForUnit ? authEmail : null,
+          retifiedByUid: hadPreviousDocumentForUnit ? authUid : null,
+          addedInRetification: hadPreviousDocumentForUnit,
+          addedInRetificationAt: hadPreviousDocumentForUnit ? nowIso : null,
+        };
+
+        let persistedVia = "SUBCOLLECTION";
+
+        if (requestedPayloadForCurrentUpload) {
+          workingEventDesdobramentos = upsertEmbeddedDesdobramentoEntry(
+            workingEventDesdobramentos,
+            embeddedPayload
+          );
+          shouldSyncEventRootDesdobramentos = true;
+        }
+
+        try {
+          await setDoc(documentRef, payload);
+        } catch (writeError) {
+          const code = String(writeError?.code || "").toLowerCase();
+          const message = String(writeError?.message || "").toLowerCase();
+          const isPermissionDenied =
+            code.includes("permission-denied") ||
+            message.includes("missing or insufficient permissions");
+
+          if (!isPermissionDenied) {
+            throw writeError;
+          }
+
+          workingEventDesdobramentos = upsertEmbeddedDesdobramentoEntry(
+            workingEventDesdobramentos,
+            embeddedPayload
+          );
+
+          const eventRef = doc(db, "events", selectedEvent.id);
+          let rootUpdated = false;
+          let lastRootError = null;
+
+          try {
+            await updateDoc(eventRef, {
+              desdobramentos: workingEventDesdobramentos,
+            });
+            rootUpdated = true;
+          } catch (rootError) {
+            lastRootError = rootError;
+          }
+
+          if (!rootUpdated) {
+            try {
+              await updateDoc(eventRef, {
+                desdobramentos: workingEventDesdobramentos,
+                updatedAt: serverTimestamp(),
+              });
+              rootUpdated = true;
+            } catch (rootError2) {
+              lastRootError = rootError2;
+            }
+          }
+
+          if (!rootUpdated) {
+            throw lastRootError || writeError;
+          }
+
+          persistedVia = "EVENT_DOC";
+          eventRootWasUpdated = true;
+        }
+
+        const localPayload =
+          persistedVia === "EVENT_DOC"
+            ? buildEmbeddedDesdobramentoDoc(selectedEvent.id, embeddedPayload, 0)
+            : {
+                id: documentId,
+                ...payload,
+                origin: "UNIT",
+                originType: "UNIT",
+                documentScope: "UNIT",
+                ...(requestedPayloadForCurrentUpload || {}),
+                uploadedAt: new Date(),
+                createdAt: new Date(),
+                updatedAt: new Date(),
+                retifiedAt: hadPreviousDocumentForUnit ? new Date() : null,
+                addedInRetificationAt: hadPreviousDocumentForUnit ? new Date() : null,
+              };
+
+        createdLocalPayloads.push(localPayload);
+      }
+
+      if (shouldSyncEventRootDesdobramentos && !eventRootWasUpdated) {
+        await updateDoc(doc(db, "events", selectedEvent.id), {
+          desdobramentos: workingEventDesdobramentos,
+          updatedAt: serverTimestamp(),
+        });
+        eventRootWasUpdated = true;
+      }
 
       setEventDocumentsMap((prev) => {
         const docs = prev[selectedEvent.id] || [];
-        const updatedDocs = [localPayload, ...docs].sort((a, b) => {
+        let nextDocs = [...docs];
+
+        createdLocalPayloads.forEach((localPayload) => {
+          const payloadUnitId = String(localPayload?.unitId || "").trim();
+          const payloadUnitCode = normalizeCode(localPayload?.unitCode);
+
+          nextDocs = nextDocs.filter((docItem) => {
+            if (!docItem) return false;
+
+            const sameUnitDesdobramento =
+              String(docItem.category || "").toUpperCase() === "DESDOBRAMENTO" &&
+              !docItem.isDeleted &&
+              (
+                (payloadUnitId && String(docItem.unitId || "") === payloadUnitId) ||
+                (payloadUnitCode && normalizeCode(docItem.unitCode) === payloadUnitCode)
+              );
+
+            return !sameUnitDesdobramento;
+          });
+
+          nextDocs.unshift(localPayload);
+        });
+
+        nextDocs.sort((a, b) => {
           const da = normalizeToDate(a.uploadedAt);
           const dbd = normalizeToDate(b.uploadedAt);
           return (dbd?.getTime() || 0) - (da?.getTime() || 0);
@@ -2237,25 +5600,135 @@ export default function Home({
 
         return {
           ...prev,
-          [selectedEvent.id]: updatedDocs,
+          [selectedEvent.id]: nextDocs,
         };
       });
 
+      if (eventRootWasUpdated) {
+        setEvents((prev) =>
+          prev.map((ev) =>
+            ev.id === selectedEvent.id
+              ? {
+                  ...ev,
+                  desdobramentos: workingEventDesdobramentos,
+                  updatedAt: new Date(),
+                }
+              : ev
+          )
+        );
+      }
+
+      const skippedUnits = existingDocsByUnit.map((item) =>
+        getUnitCode(item.unit) || getUnitLabel(item.unit)
+      );
+      const createdUnits = unitsToCreate.map((unit) =>
+        getUnitCode(unit) || getUnitLabel(unit)
+      );
+
+      if (profileLockedDesdobramentoUnit) {
+        setDesdobramentoUnitId(String(profileLockedDesdobramentoUnit?.id || ""));
+      }
+
       setDesdobramentoFile(null);
+      setShowGestoraSubordinateSelectorStep(false);
+      setShowGestoraSubordinateSelectorInUpload(false);
+      setDesdobramentoSelectedUnitIds([]);
+      setDesdobramentoDocumentType("DESDOBRAMENTO");
+
+      const selectedSubordinateLabels = selectedSubordinateUnitsToInclude.map(
+        (unit) => getUnitCode(unit) || getUnitLabel(unit)
+      );
+
+      if (skippedUnits.length > 0) {
+        window.alert(
+          `Desdobramento anexado para ${createdUnits.join(", ")}. As seguintes unidades já possuíam arquivo e foram mantidas: ${skippedUnits.join(", ")}.`
+        );
+      } else if (shouldShowGestoraSubordinateSelector && selectedSubordinateLabels.length > 0) {
+        window.alert(
+          `Desdobramento da gestora anexado com sucesso. As seguintes subordinadas foram indicadas para inserir seus desdobramentos: ${selectedSubordinateLabels.join(", ")}.`
+        );
+      } else {
+        window.alert("Desdobramento anexado com sucesso.");
+      }
     } catch (error) {
       console.error("Erro ao anexar desdobramento:", error);
-      window.alert("Não foi possível anexar o desdobramento.");
+      const attemptedPaths = toArray(error?.attemptedStoragePaths);
+      const attemptedPathsMessage = attemptedPaths.length
+        ? `
+
+Caminhos testados:
+${attemptedPaths.join("\n")}`
+        : "";
+
+      window.alert(
+        `Não foi possível anexar o desdobramento.
+
+Código: ${error?.code || "-"}
+Mensagem: ${error?.message || "-"}${attemptedPathsMessage}`
+      );
     } finally {
       setDocumentActionLoading("");
     }
   }
 
+
   function renderDocumentActions(docItem, includeUnitBadge = false) {
-    const canManage = canManageDocument(docItem, permissions, user);
+    const baseCanManage = canManageDocument(docItem, permissions, user, directProfileUnitIdentity);
+
+    const documentUnitId = getDocumentLinkedUnitId(docItem);
+    const documentUnitCode = getDocumentLinkedUnitCode(docItem);
+
+    const viewerUnitId = String(
+      lockedProfileUnitId ||
+        directProfileUnitIdentity.unitId ||
+        permissions.activeUnitId ||
+        ""
+    ).trim();
+
+    const viewerUnitCode = normalizeCode(
+      lockedProfileUnitCode ||
+        directProfileUnitIdentity.unitCode ||
+        permissions.activeUnitCode ||
+        ""
+    );
+
+    const isOwnUnitDocument =
+      (viewerUnitId && documentUnitId && documentUnitId === viewerUnitId) ||
+      (viewerUnitCode && documentUnitCode && documentUnitCode === viewerUnitCode);
+
+    const isManagedSubordinateDocument =
+      permissions.isGestoraProfile &&
+      profileHasSubordinates &&
+      !isHierarchyRestrictedViewer &&
+      (
+        (documentUnitId && userManagedScopeIds.has(documentUnitId)) ||
+        (documentUnitCode &&
+          (
+            profileScopeUnitCodes.includes(documentUnitCode) ||
+            resolvedPermissionUnitCodes.includes(documentUnitCode)
+          ))
+      );
+
+    const canManage =
+      permissions.canManageAll ||
+      (
+        baseCanManage &&
+        (
+          isOwnUnitDocument ||
+          isManagedSubordinateDocument
+        )
+      );
+
     const canOpen = canOpenDocument(docItem, permissions);
     const isBusyDelete = documentActionLoading === `${docItem.id}:delete`;
     const isBusyReplace = documentActionLoading === `${docItem.id}:replace`;
     const isBusy = isBusyDelete || isBusyReplace;
+
+    const replaceType =
+      replaceDocumentTypes[docItem.id] || getEffectiveDocumentType(docItem);
+
+    const documentTypeOptions = getDocumentTypeOptions(docItem.origin);
+    const isReplacePickerOpen = replacePickerDocId === docItem.id;
 
     return (
       <div className="documentItemActions">
@@ -2271,7 +5744,9 @@ export default function Home({
               href={docItem.downloadURL}
               target="_blank"
               rel="noreferrer"
-              className="documentActionBtn"
+              className="documentActionBtn iconOnlyActionBtn"
+              title="Visualizar documento"
+              aria-label="Visualizar documento"
             >
               <ExternalLink size={15} />
               <span>Visualizar</span>
@@ -2280,7 +5755,9 @@ export default function Home({
             <a
               href={docItem.downloadURL}
               download={docItem.fileName || true}
-              className="documentActionBtn secondary"
+              className="documentActionBtn secondary iconOnlyActionBtn"
+              title="Baixar documento"
+              aria-label="Baixar documento"
             >
               <Download size={15} />
               <span>Baixar</span>
@@ -2294,7 +5771,9 @@ export default function Home({
               href={docItem.downloadURL}
               target="_blank"
               rel="noreferrer"
-              className="documentActionBtn"
+              className="documentActionBtn iconOnlyActionBtn"
+              title="Visualizar documento"
+              aria-label="Visualizar documento"
             >
               <ExternalLink size={15} />
               <span>Visualizar</span>
@@ -2303,7 +5782,9 @@ export default function Home({
             <a
               href={docItem.downloadURL}
               download={docItem.fileName || true}
-              className="documentActionBtn secondary"
+              className="documentActionBtn secondary iconOnlyActionBtn"
+              title="Baixar documento"
+              aria-label="Baixar documento"
             >
               <Download size={15} />
               <span>Baixar</span>
@@ -2313,39 +5794,116 @@ export default function Home({
 
         {!docItem.isDeleted && canManage && (
           <>
-            <label
-              className="documentActionBtn"
-              style={{ cursor: isBusy ? "not-allowed" : "pointer" }}
-            >
-              {isBusyReplace ? (
-                <Loader2
-                  size={15}
-                  style={{ animation: "spin 0.9s linear infinite" }}
-                />
-              ) : (
-                <Pencil size={15} />
-              )}
-              <span>{isBusyReplace ? "Substituindo..." : "Substituir"}</span>
-              <input
-                type="file"
-                hidden
-                accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                disabled={isBusy}
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleReplaceDocument(docItem, file);
-                  e.target.value = "";
+            {isReplacePickerOpen ? (
+              <div
+                style={{
+                  minWidth: 220,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                  padding: 10,
+                  border: "1px solid #dbe2ea",
+                  borderRadius: 12,
+                  background: "#f8fafc",
                 }}
-              />
-            </label>
+              >
+                <label
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: "#6b7280",
+                  }}
+                >
+                  Tipo do arquivo
+                </label>
+                <select
+                  value={replaceType}
+                  disabled={isBusy}
+                  onChange={(e) =>
+                    setReplaceDocumentTypes((prev) => ({
+                      ...prev,
+                      [docItem.id]: e.target.value,
+                    }))
+                  }
+                  style={{
+                    height: 38,
+                    borderRadius: 10,
+                    border: "1px solid #d1d5db",
+                    padding: "0 10px",
+                    fontSize: 13,
+                    background: "#fff",
+                  }}
+                >
+                  {documentTypeOptions.map((option) => (
+                    <option key={`${docItem.id}-${option.value}`} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+
+                <label
+                  className="documentActionBtn"
+                  style={{ cursor: isBusy ? "not-allowed" : "pointer" }}
+                >
+                  {isBusyReplace ? (
+                    <Loader2
+                      size={15}
+                      style={{ animation: "spin 0.9s linear infinite" }}
+                    />
+                  ) : (
+                    <Pencil size={15} />
+                  )}
+                  <span>{isBusyReplace ? "Substituindo..." : "Escolher arquivo"}</span>
+                  <input
+                    type="file"
+                    hidden
+                    accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    disabled={isBusy}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        handleReplaceDocument(docItem, file, replaceType);
+                      }
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+
+                <button
+                  type="button"
+                  className="documentActionBtn secondary"
+                  onClick={() => setReplacePickerDocId("")}
+                  disabled={isBusy}
+                >
+                  <X size={15} />
+                  <span>Cancelar</span>
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="documentActionBtn iconOnlyActionBtn"
+                title="Substituir documento"
+                aria-label="Substituir documento"
+                onClick={() => {
+                  setReplaceDocumentTypes((prev) => ({
+                    ...prev,
+                    [docItem.id]: prev[docItem.id] || getEffectiveDocumentType(docItem),
+                  }));
+                  setReplacePickerDocId(docItem.id);
+                }}
+                disabled={isBusy}
+              >
+                <Pencil size={15} />
+                <span>Substituir documento</span>
+              </button>
+            )}
 
             <button
               type="button"
-              className="documentActionBtn secondary"
-              style={{
-                background: "#fee2e2",
-                color: "#991b1b",
-              }}
+              className="documentActionBtn dangerSoft iconOnlyActionBtn"
+              title="Excluir documento"
+              aria-label="Excluir documento"
               onClick={() => handleDeleteDocument(docItem)}
               disabled={isBusy}
             >
@@ -2357,21 +5915,13 @@ export default function Home({
               ) : (
                 <Trash2 size={15} />
               )}
-              <span>{isBusyDelete ? "Excluindo..." : "Excluir"}</span>
+              <span>{isBusyDelete ? "Excluindo documento" : "Excluir documento"}</span>
             </button>
           </>
         )}
 
         {docItem.isDeleted && !permissions.isGlobalReader && (
-          <span
-            className="documentPill subtle"
-            style={{
-              background: "#f3f4f6",
-              color: "#6b7280",
-            }}
-          >
-            Arquivo indisponível
-          </span>
+          <span className="documentPill subtle">Arquivo indisponível</span>
         )}
       </div>
     );
@@ -2392,7 +5942,7 @@ export default function Home({
           }}
         >
           <strong>{getDocumentTypeLabel(docItem)}</strong>
-          {docRetified && !docItem.isDeleted && (
+          {docRetified && (
             <span
               style={{
                 display: "inline-flex",
@@ -2409,7 +5959,7 @@ export default function Home({
               }}
             >
               <BadgeCheck size={11} />
-              <span>Retificado</span>
+              <span>{docItem.isDeleted ? "Retificado / Excluído" : "Retificado"}</span>
             </span>
           )}
         </div>
@@ -2418,26 +5968,302 @@ export default function Home({
           <span className="documentTypeLabel">{secondaryText || "-"}</span>
         )}
 
-        {docRetified && !docItem.isDeleted && docRetifiedDate && (
-          <span
-            style={{
-              fontSize: 12,
-              color: "#be185d",
-              fontWeight: 700,
-              marginTop: 2,
-            }}
-          >
-            Atualizado em {fmtDateTime(docRetifiedDate)}
-          </span>
-        )}
-
         <DeletedDocumentNotice docItem={docItem} />
       </div>
     );
   }
 
-  return (
+
+  function renderGestoraRequestedSubordinatesBlock(docItem) {
+    const requestedSubordinateBadges = getRequestedSubordinateBadges(docItem, unitMap);
+    const requestedSubordinateTree = buildRequestedSubordinateTree(
+      docItem,
+      desdobramentoDocuments,
+      unitMap
+    );
+    const docUnitId = getDocumentLinkedUnitId(docItem);
+    const docUnitCode = getDocumentLinkedUnitCode(docItem);
+    const isGestoraOwnDocument =
+      permissions.isGestoraProfile &&
+      ((lockedProfileUnitId && docUnitId === lockedProfileUnitId) ||
+        (lockedProfileUnitCode && docUnitCode === lockedProfileUnitCode));
+
+    const currentUnitId = String(
+      lockedProfileUnitId ||
+        directProfileUnitIdentity.unitId ||
+        permissions.activeUnitId ||
+        ""
+    ).trim();
+
+    const currentUnitCode = normalizeCode(
+      lockedProfileUnitCode ||
+        directProfileUnitIdentity.unitCode ||
+        permissions.activeUnitCode ||
+        ""
+    );
+
+    const isInsideViewerScope =
+      permissions.isAIOUser ||
+      permissions.isGlobalReader ||
+      (!isHierarchyRestrictedViewer && docUnitId && userManagedScopeIds.has(docUnitId)) ||
+      (!isHierarchyRestrictedViewer && docUnitCode && (profileScopeUnitCodes.includes(docUnitCode) || resolvedPermissionUnitCodes.includes(docUnitCode)));
+
+    const canShowGestoraRequestedSubordinatesCard =
+      !docItem.isDeleted &&
+      canViewGestoraSubordinateTree &&
+      requestedSubordinateBadges.length > 0 &&
+      (
+        isGestoraOwnDocument ||
+        permissions.isAIOUser ||
+        permissions.isGlobalReader ||
+        isInsideViewerScope ||
+        requestedSubordinateBadges.some((badge) => {
+          const badgeUnitId = String(badge?.unitId || "").trim();
+          const badgeUnitCode = normalizeCode(badge?.code);
+
+          return (
+            (currentUnitId && badgeUnitId === currentUnitId) ||
+            (currentUnitCode && badgeUnitCode === currentUnitCode)
+          );
+        })
+      );
+
+    if (!canShowGestoraRequestedSubordinatesCard) return null;
+
+    return (
+      <div
+        style={{
+          marginTop: 0,
+          paddingTop: 1,
+          borderTop: "1px dashed #dbe2ea",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
+            marginBottom: 1,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 800,
+              color: "#6b7280",
+              textTransform: "uppercase",
+              letterSpacing: 0.3,
+            }}
+          >
+            Unidades subordinadas
+          </div>
+
+          <button
+            type="button"
+            className="documentActionBtn secondary"
+            title={showGestoraSubordinateSelectorStep ? "Recolher" : "Expandir"}
+            aria-label={showGestoraSubordinateSelectorStep ? "Recolher" : "Expandir"}
+            style={{
+              marginLeft: "auto",
+              minWidth: 30,
+              width: 30,
+              height: 30,
+              padding: 0,
+              flexShrink: 0,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: 8,
+              fontSize: 18,
+              fontWeight: 800,
+              lineHeight: 1,
+            }}
+            onClick={() => setShowGestoraSubordinateSelectorStep((prev) => !prev)}
+          >
+            <span style={{ display: "inline-block", transform: "translateY(-1px)" }}>
+              {showGestoraSubordinateSelectorStep ? "−" : "+"}
+            </span>
+          </button>
+        </div>
+
+        <div
+          className="eventUnitBadges"
+          style={{
+            marginBottom: showGestoraSubordinateSelectorStep ? 2 : 0,
+            gap: 6,
+          }}
+        >
+          {requestedSubordinateBadges.map((badge) => {
+            const badgeUnitId = String(badge?.unitId || "").trim();
+            const badgeCode = normalizeCode(badge?.code);
+            const hasUnitDesdobramento =
+              (badgeUnitId && selectedEventDesdobramentoState.unitIds.has(badgeUnitId)) ||
+              (!!badgeCode && selectedEventDesdobramentoState.unitCodes.has(badgeCode));
+
+            return (
+              <span
+                key={`${docItem.id}-requested-${badge.key}`}
+                className={[
+                  "eventUnitBadge",
+                  hasUnitDesdobramento ? "hasDesdobramento" : "",
+                ].join(" ")}
+                title={badge.name || badge.code || "UNIDADE"}
+                style={{
+                  padding: "4px 8px",
+                  fontSize: 10,
+                }}
+              >
+                {badge.code || badge.name || "UNIDADE"}
+              </span>
+            );
+          })}
+        </div>
+
+        {showGestoraSubordinateSelectorStep && requestedSubordinateTree.length > 0 ? (
+          <div
+            style={{
+              display: "grid",
+              gap: 2,
+              marginTop: 0,
+            }}
+          >
+            {requestedSubordinateTree.map((item) => {
+              const badge = item.badge;
+              const childDoc = item.document;
+              const hasChildDoc = !!childDoc;
+
+              return (
+                <div
+                  key={item.key}
+                  style={{
+                    marginLeft: 4,
+                    paddingLeft: 6,
+                    borderLeft: "2px solid #dbe2ea",
+                  }}
+                >
+                  <div
+                    className="compactTreeNodeCard"
+                    style={{
+                      border: "1px solid #e5e7eb",
+                      borderRadius: 12,
+                      background: "#f8fafc",
+                      padding: hasChildDoc ? "7px 9px" : "6px 9px",
+                    }}
+                  >
+                    {hasChildDoc ? (
+                      <div
+                        style={{
+                          display: "grid",
+                          gap: 6,
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "flex-start",
+                            justifyContent: "space-between",
+                            gap: 8,
+                          }}
+                        >
+                          <div className="documentItemTitle" style={{ gap: 10, minWidth: 0 }}>
+                            <DocumentFileIcon fileName={childDoc.fileName} />
+                            {renderDocumentHeader(
+                              childDoc,
+                              childDoc.unitCode && childDoc.unitName
+                                ? `${childDoc.unitCode} - ${childDoc.unitName}`
+                                : childDoc.unitCode || childDoc.unitName || "UNIDADE"
+                            )}
+                          </div>
+
+                          <span
+                            className="documentPill success"
+                            style={{ flexShrink: 0, padding: "4px 8px", fontSize: 10 }}
+                          >
+                            Recebido
+                          </span>
+                        </div>
+
+                        <div className="documentPills" style={{ gap: 6 }}>
+                          <span className="documentPill success">
+                            {childDoc.unitCode || badge.code || "UNIDADE"}
+                          </span>
+                          {!childDoc.isDeleted && (
+                            <>
+                              <span className="documentPill subtle">
+                                {childDoc.uploadedByEmail || "-"}
+                              </span>
+                              <span className="documentPill subtle">
+                                {fmtDateTime(childDoc.uploadedAt)}
+                              </span>
+                            </>
+                          )}
+
+                          {childDoc.isDeleted && (
+                            <span className="documentPill subtle">
+                              {fmtDateTime(childDoc.deletedAt)}
+                            </span>
+                          )}
+                        </div>
+
+                        <div style={{ display: "flex", justifyContent: "flex-start", marginTop: 0 }}>
+                          {renderDocumentActions(childDoc)}
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 10,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <div style={{ minWidth: 0 }}>
+                          <div
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 800,
+                              color: "#111827",
+                            }}
+                          >
+                            {badge.code && badge.name
+                              ? `${badge.code} — ${badge.name}`
+                              : badge.code || badge.name || "UNIDADE"}
+                          </div>
+
+                          <div
+                            style={{
+                              marginTop: 2,
+                              fontSize: 11,
+                              color: "#6b7280",
+                              fontWeight: 600,
+                            }}
+                          >
+                            Aguardando desdobramento.
+                          </div>
+                        </div>
+
+                        <span
+                          className="documentPill subtle"
+                          style={{ flexShrink: 0, padding: "4px 8px", fontSize: 10 }}
+                        >
+                          Pendente
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+    );
+  }   return (
     <div className="dashboardShell">
+      <CompactDocumentUiStyle />
       <AppSidebar
         user={user}
         claims={claims}
@@ -2568,17 +6394,19 @@ export default function Home({
                   <select
                     value={unitFilterId}
                     onChange={(e) => setUnitFilterId(e.target.value)}
-                    disabled={loadingUnits}
+                    disabled={!(permissions.isGlobalReader || permissions.usesScopeVisibility)}
                   >
-                    <option value="">
-                      {loadingUnits ? "Carregando unidades..." : "Todas"}
-                    </option>
-
-                    {unitOptions.map((unit) => (
-                      <option key={unit.id} value={unit.id}>
-                        {unit.label}
-                      </option>
-                    ))}
+                    {loadingUnits && visibleUnitOptions.length === 0 ? (
+                      <option value="">Carregando unidade...</option>
+                    ) : visibleUnitOptions.length === 0 ? (
+                      <option value="">Unidade do perfil</option>
+                    ) : (
+                      visibleUnitOptions.map((unit) => (
+                        <option key={unit.id} value={unit.id}>
+                          {unit.label}
+                        </option>
+                      ))
+                    )}
                   </select>
                 </div>
               </div>
@@ -2693,7 +6521,7 @@ export default function Home({
                 <div className="eventsTable">
                   <div className="eventsHeader eventsHeaderCompact">
                     <span>Data</span>
-                    <span>Horário</span>
+                    <span style={{ fontSize: 11, marginBottom: 2 }}>Horário</span>
                     <span>Evento</span>
                     <span>Status</span>
                   </div>
@@ -2706,10 +6534,29 @@ export default function Home({
                     filteredEvents.map((ev) => {
                       const { start, end } = getEventRange(ev);
                       const computedStatus = getComputedEventStatus(ev);
-                      const eventUnitBadges = buildEventUnitBadges(ev);
-                      const desdobramentoUnitCodes = getDesdobramentoUnitCodes(
-                        eventDocumentsMap[ev.id] || []
+                      const rowDocuments = mergeEventDocuments(
+                        eventDocumentsMap[ev.id] || [],
+                        getEventEmbeddedDocuments(ev)
                       );
+
+                      const eventUnitBadges = buildEventUnitBadges(ev, unitMap);
+                      const { unitIds: desdobramentoUnitIds, unitCodes: desdobramentoUnitCodes } =
+                        getDesdobramentoUnitState(rowDocuments);
+
+                      const pendingUnitsForRow = getPendingDesdobramentoUnits(
+                        ev,
+                        rowDocuments,
+                        unitMap
+                      );
+                      const showPendingAlertForProfileInRow = pendingUnitsForRow.some((unit) => {
+                        const candidateId = String(unit?.id || "").trim();
+                        const candidateCode = normalizeCode(getUnitCode(unit));
+
+                        return (
+                          (candidateId && profileAlertCandidateIds.includes(candidateId)) ||
+                          (candidateCode && profileAlertCandidateCodes.includes(candidateCode))
+                        );
+                      });
 
                       return (
                         <div
@@ -2745,9 +6592,11 @@ export default function Home({
                               <div className="eventUnitBadges">
                                 {eventUnitBadges.map((badge) => {
                                   const codeNorm = normalizeCode(badge.code);
+                                  const unitIdNorm = String(badge.unitId || "").trim();
+
                                   const hasDesdobramento =
-                                    !!codeNorm &&
-                                    desdobramentoUnitCodes.has(codeNorm);
+                                    (unitIdNorm && desdobramentoUnitIds.has(unitIdNorm)) ||
+                                    (!!codeNorm && desdobramentoUnitCodes.has(codeNorm));
 
                                   return (
                                     <span
@@ -2766,6 +6615,10 @@ export default function Home({
                                   );
                                 })}
                               </div>
+                            )}
+
+                            {showPendingAlertForProfileInRow && (
+                              <MissingDesdobramentoTag />
                             )}
                           </div>
 
@@ -2880,264 +6733,440 @@ export default function Home({
             return (
               <div className="eventModalOverlay" onClick={closeModal}>
                 <div
-                  className="eventModal"
+                  className="eventModal eventModalModern"
                   onClick={(e) => e.stopPropagation()}
                   role="dialog"
                   aria-modal="true"
                 >
-                  <div className="eventModalHeader">
-                    <div className="eventModalHeaderTop">
-                      <div className="eventModalProtocol">
-                        DATA DO PROTOCOLO {selectedEventProtocolLabel}
-                      </div>
-
-                      <h2>
-                        {selectedEvent.title || selectedEvent.name || "Evento sem nome"}
-                      </h2>
-                    </div>
-
+                  <div
+                    className="eventModalTopBand"
+                    style={{ padding: "14px 18px 12px", minHeight: "auto" }}
+                  >
                     <button
                       type="button"
-                      className="eventModalClose"
+                      className="eventModalClose eventModalCloseBand"
                       onClick={closeModal}
-                      disabled={
-                        actionLoading === "delete" ||
-                        !!documentActionLoading
-                      }
+                      disabled={actionLoading === "delete" || !!documentActionLoading}
                       aria-label="Fechar modal"
                     >
                       <X size={22} />
                     </button>
+
+                    <div className="eventModalTopContent" style={{ gap: 8 }}>
+                      <span className="eventModalTopLabel" style={{ marginBottom: 2 }}>Evento / Operação</span>
+
+                      <h2 className="eventModalTopTitle" style={{ margin: 0, lineHeight: 1.15 }}>
+                        {selectedEvent.title || selectedEvent.name || "Evento sem nome"}
+                      </h2>
+
+                      <div className="eventModalTopDate" style={{ marginTop: 2 }}>
+                        {fmtEventDateRange(selectedEvent.startAt, selectedEvent.endAt)}
+                      </div>
+
+                      <div className="eventModalTopBadges" style={{ marginTop: 2 }}>
+                        <StatusPill status={computedStatus} />
+                      </div>
+
+                      {hasRetification(selectedEvent) && (
+                        <RetifiedTag date={selectedEvent.retifiedAt} light />
+                      )}
+
+                      {canShowTopEventActions && (
+                        <>
+                          <div className="eventModalTopActions" style={{ marginTop: 6 }}>
+                            <button
+                              type="button"
+                              className="eventTopActionBtn eventTopActionBtnPrimary"
+                              onClick={handleEditEvent}
+                              disabled={actionLoading === "delete" || !!documentActionLoading}
+                            >
+                              <Pencil size={16} />
+                              <span>Editar / Retificar</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              className="eventTopActionBtn eventTopActionBtnDanger"
+                              onClick={handleDeleteEvent}
+                              disabled={actionLoading === "delete" || !!documentActionLoading}
+                            >
+                              {actionLoading === "delete" ? (
+                                <Loader2
+                                  size={16}
+                                  style={{ animation: "spin 0.9s linear infinite" }}
+                                />
+                              ) : (
+                                <Trash2 size={16} />
+                              )}
+                              <span>{actionLoading === "delete" ? "Excluindo..." : "Excluir"}</span>
+                            </button>
+                          </div>
+
+                          <div className="eventModalTopHint" style={{ marginTop: 6, fontSize: 12 }}>
+                            Ao retificar, as unidades devem receber a atualização como novo envio.
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
 
                   <div className="eventModalBody">
-                    <section className="eventModalInfoPanel">
-                      <div className="eventModalGridCustom">
-                        <div className="eventModalBlock">
-                          <div className="eventModalBlockLabel">Data e horário</div>
+                    <div className="eventModalInfoGroup" style={{ gap: 10, marginBottom: 10 }}>
+                      <div className="eventModalInfoCard" style={{ minHeight: 0, padding: "10px 12px", borderRadius: 14 }}>
+                        <div className="eventModalInfoIcon" style={{ width: 34, height: 34, minWidth: 34 }}>
+                          <Clock3 size={16} />
+                        </div>
+                        <div className="eventModalInfoText" style={{ gap: 2, lineHeight: 1.15 }}>
+                          <span style={{ fontSize: 11, marginBottom: 2 }}>Horário</span>
+                          <strong style={{ fontSize: 14, lineHeight: 1.15 }}>
+                            {fmtEventTimeRange(selectedEvent.startAt, selectedEvent.endAt)}
+                          </strong>
+                        </div>
+                      </div>
 
-                          <div className="eventModalValueStack">
-                            <div className="eventModalValueRow">
-                              <CalendarDays size={24} />
-                              <strong>
-                                {fmtEventDateRange(
-                                  selectedEvent.startAt,
-                                  selectedEvent.endAt
-                                )}
-                              </strong>
-                            </div>
+                      <div className="eventModalInfoCard" style={{ minHeight: 0, padding: "10px 12px", borderRadius: 14 }}>
+                        <div className="eventModalInfoIcon" style={{ width: 34, height: 34, minWidth: 34 }}>
+                          <MapPin size={16} />
+                        </div>
+                        <div className="eventModalInfoText" style={{ gap: 2, lineHeight: 1.15 }}>
+                          <span style={{ fontSize: 11, marginBottom: 2 }}>Local</span>
+                          <strong style={{ fontSize: 14, lineHeight: 1.15 }}>
+                            {selectedEvent.location ||
+                              selectedEvent.address ||
+                              "Local não informado"}
+                          </strong>
+                        </div>
+                      </div>
 
-                            <div className="eventModalValueRow">
-                              <Clock3 size={24} />
-                              <span>
-                                {fmtEventTimeRange(
-                                  selectedEvent.startAt,
-                                  selectedEvent.endAt
-                                )}
+                      <div className="eventModalInfoCard" style={{ minHeight: 0, padding: "10px 12px", borderRadius: 14 }}>
+                        <div className="eventModalInfoIcon" style={{ width: 34, height: 34, minWidth: 34 }}>
+                          <BadgeInfo size={16} />
+                        </div>
+                        <div className="eventModalInfoText" style={{ gap: 2, lineHeight: 1.15 }}>
+                          <span style={{ fontSize: 11, marginBottom: 2 }}>Status / Tipo</span>
+                          <strong style={{ fontSize: 14, lineHeight: 1.15 }}>
+                            {statusLabel(computedStatus)} •{" "}
+                            {typeLabel(selectedEvent.operationType)}
+                          </strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="eventModalGrid eventModalGridCompact" style={{ gap: 10, marginTop: 2, marginBottom: 10 }}>
+                      <div className="eventModalItem" style={{ minHeight: 0, padding: "10px 12px", borderRadius: 14 }}>
+                        <span style={{ fontSize: 11, marginBottom: 2 }}>Público estimado</span>
+                        <strong style={{ fontSize: 14, lineHeight: 1.15 }}>{formatEstimatedPublic(selectedEvent.estimatedPublic)}</strong>
+                      </div>
+
+                      <div className="eventModalItem" style={{ minHeight: 0, padding: "10px 12px", borderRadius: 14 }}>
+                        <span style={{ fontSize: 11, marginBottom: 2 }}>Origem</span>
+                        <strong style={{ fontSize: 14, lineHeight: 1.15 }}>{selectedEventOriginDisplay}</strong>
+                      </div>
+                    </div>
+
+                    {Array.isArray(selectedEvent.responsibleUnits) &&
+                      selectedEvent.responsibleUnits.length > 0 && (
+                        <div className="eventModalSection">
+                          <div className="sectionTitleRow">
+                            <h3>Unidades responsáveis</h3>
+                          </div>
+
+                          <div className="eventModalTags">
+                            {selectedEvent.responsibleUnits.map((unit, index) => (
+                              <span
+                                key={`${unit.unitId || unit.code || "resp"}-${index}`}
+                                className="eventTag"
+                              >
+                                <b>{unit.code || "UNIDADE"}</b>
                               </span>
-                            </div>
+                            ))}
                           </div>
-                        </div>
-
-                        <div className="eventModalBlock">
-                          <div className="eventModalBlockLabel">Localização</div>
-
-                          <div className="eventModalValueRow eventModalValueWrap">
-                            <MapPin size={24} />
-                            <strong>
-                              {selectedEvent.location ||
-                                selectedEvent.address ||
-                                "Local não informado"}
-                            </strong>
-                          </div>
-                        </div>
-
-                        <div className="eventModalBlock">
-                          <div className="eventModalBlockLabel">Responsável</div>
-
-                          <div className="eventModalValueStack">
-                            <div className="eventModalValueRow">
-                              <UserRound size={24} />
-                              <span>{selectedEventResponsibleName}</span>
-                            </div>
-
-                            <div className="eventModalValueRow">
-                              <Phone size={24} />
-                              <span>{selectedEventResponsiblePhone}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="eventModalBlock">
-                          <div className="eventModalBlockLabel">Público estimado</div>
-
-                          <div className="eventModalValueRow">
-                            <Users size={24} />
-                            <span>{selectedEventPublicDisplay}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </section>
-
-                    <section className="eventModalDocCard">
-                      <div className="eventModalDocTitle">
-                        <FileText size={22} />
-                        <span>OFÍCIO DE SOLICITAÇÃO:</span>
-                      </div>
-
-                      {selectedPrimaryAioDocument?.downloadURL ? (
-                        <a
-                          className="eventModalDocButton"
-                          href={selectedPrimaryAioDocument.downloadURL}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          <FolderOpen size={28} />
-                          <span>ABRIR DOCUMENTO</span>
-                        </a>
-                      ) : (
-                        <div
-                          className="eventModalDocButton"
-                          style={{
-                            opacity: 0.58,
-                            cursor: "not-allowed",
-                          }}
-                        >
-                          <FolderOpen size={28} />
-                          <span>DOCUMENTO NÃO DISPONÍVEL</span>
                         </div>
                       )}
 
-                      {selectedPrimaryAioDocument &&
-                        hasDocumentRetification(selectedPrimaryAioDocument) && (
-                          <div style={{ marginTop: 10 }}>
-                            <RetifiedTag
-                              date={getDocumentRetificationDate(
-                                selectedPrimaryAioDocument
-                              )}
-                              text="Documento retificado"
-                            />
+                    {Array.isArray(selectedEvent.involvedUnits) &&
+                      selectedEvent.involvedUnits.length > 0 && (
+                        <div className="eventModalSection">
+                          <div className="sectionTitleRow">
+                            <h3>Unidades envolvidas</h3>
                           </div>
-                        )}
-                    </section>
 
-                    <section className="eventModalSection">
-                      <h3 className="eventModalSectionTitle">Envolvidos:</h3>
-                      <div className="eventModalText">
-                        {selectedEventInvolvedDisplay}
+                          <div className="eventModalTags">
+                            {selectedEvent.involvedUnits.map((unit, index) => (
+                              <span
+                                key={`${unit.unitId || unit.code || "inv"}-${index}`}
+                                className="eventTag"
+                              >
+                                <b>{unit.code || "UNIDADE"}</b>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                    <div className="eventModalSection">
+                      <div className="sectionTitleRow">
+                        <h3>{planningDocumentsSectionTitle}</h3>
+                        <span className="sectionCounter">{planningDocuments.length}</span>
                       </div>
-                    </section>
 
-                    {!!selectedEvent.description && (
-                      <section className="eventModalSection">
-                        <h3 className="eventModalSectionTitle">Descrição:</h3>
-                        <div className="eventModalTextSmall">
-                          {selectedEvent.description}
-                        </div>
-                      </section>
-                    )}
+                      {loadingDocuments ? (
+                        <div className="emptyMini">Carregando documentos...</div>
+                      ) : planningDocuments.length === 0 ? (
+                        <div className="emptyMini">Nenhum documento da AIO anexado.</div>
+                      ) : (
+                        <div className="documentsList modernDocumentsList">
+                          {planningDocuments.map((docItem) => {
+                            const docUnitId = String(docItem?.unitId || "").trim();
+                            const docUnitCode = normalizeCode(docItem?.unitCode);
+                            const isGestoraOwnDocument =
+                              permissions.isGestoraProfile &&
+                              (
+                                (lockedProfileUnitId && docUnitId === lockedProfileUnitId) ||
+                                (lockedProfileUnitCode && docUnitCode === lockedProfileUnitCode)
+                              );
+                            const requestedSubordinateBadges = getRequestedSubordinateBadges(docItem, unitMap);
+                            const shouldRenderGestoraTreeInline =
+                              !docItem.isDeleted &&
+                              canViewGestoraSubordinateTree &&
+                              (requestedSubordinateBadges.length > 0 || canGestoraManageRequestedSubordinates) &&
+                              (
+                                isGestoraOwnDocument ||
+                                permissions.isAIOUser ||
+                                permissions.isGlobalReader ||
+                                requestedSubordinateBadges.some((badge) => {
+                                  const badgeUnitId = String(badge?.unitId || "").trim();
+                                  const badgeUnitCode = normalizeCode(badge?.code);
 
-                    {visibleDesdobramentoDocuments.length > 0 ? (
-                      <section className="eventModalDeploymentList">
-                        {visibleDesdobramentoDocuments.map((docItem) => {
-                          const unitLabel = docItem.unitCode
-                            ? `${docItem.unitCode} - ${
-                                docItem.unitName || "Unidade"
-                              }`
-                            : docItem.unitName || "Unidade";
-
-                          return (
-                            <div
-                              key={docItem.id}
-                              className="eventModalDeploymentCard"
-                              role={docItem.downloadURL ? "button" : undefined}
-                              tabIndex={docItem.downloadURL ? 0 : -1}
-                              onClick={() => {
-                                if (docItem.downloadURL) {
-                                  window.open(docItem.downloadURL, "_blank", "noopener,noreferrer");
-                                }
-                              }}
-                              onKeyDown={(e) => {
-                                if (
-                                  docItem.downloadURL &&
-                                  (e.key === "Enter" || e.key === " ")
-                                ) {
-                                  e.preventDefault();
-                                  window.open(
-                                    docItem.downloadURL,
-                                    "_blank",
-                                    "noopener,noreferrer"
+                                  return (
+                                    (lockedProfileUnitId && badgeUnitId === lockedProfileUnitId) ||
+                                    (lockedProfileUnitCode && badgeUnitCode === lockedProfileUnitCode)
                                   );
-                                }
-                              }}
-                              style={{
-                                cursor: docItem.downloadURL ? "pointer" : "default",
-                              }}
-                            >
-                              <div className="eventModalDeploymentIcon">
-                                <FolderOpen size={28} />
-                              </div>
+                                })
+                              );
 
-                              <div className="eventModalDeploymentMeta">
-                                <span>Desdobramento</span>
-                                <strong>{unitLabel}</strong>
+                            return (
+                              <div key={docItem.id} className="documentItem modernDocumentItem compactDocCard">
+                                <div className="documentLeftAccent aioAccent" />
 
-                                {hasDocumentRetification(docItem) && (
-                                  <RetifiedTag
-                                    date={getDocumentRetificationDate(docItem)}
-                                    text="Documento retificado"
-                                  />
-                                )}
+                                <div className="documentItemMain" style={shouldRenderGestoraTreeInline ? { paddingRight: 132 } : undefined}>
+                                  <div className="documentItemTitle">
+                                    <DocumentFileIcon fileName={docItem.fileName} />
+                                    {renderDocumentHeader(docItem, getPlanningDocumentSecondaryLabel(docItem))}
+                                  </div>
+
+                                  <div className="documentPills">
+                                    {!docItem.isDeleted && (
+                                      <>
+                                        <span className="documentPill subtle">
+                                          {docItem.uploadedByEmail || "-"}
+                                        </span>
+                                        <span className="documentPill subtle">
+                                          {fmtDateTime(docItem.uploadedAt)}
+                                        </span>
+                                      </>
+                                    )}
+
+                                    {docItem.isDeleted && (
+                                      <span className="documentPill subtle">
+                                        {fmtDateTime(docItem.deletedAt)}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {shouldRenderGestoraTreeInline ? (
+                                    <div
+                                      style={{
+                                        position: "absolute",
+                                        top: 8,
+                                        right: 10,
+                                        zIndex: 1,
+                                      }}
+                                    >
+                                      {renderDocumentActions(docItem)}
+                                    </div>
+                                  ) : null}
+
+                                  {renderGestoraRequestedSubordinatesBlock(docItem)}
+                                </div>
+
+                                {!shouldRenderGestoraTreeInline ? renderDocumentActions(docItem) : null}
                               </div>
-                            </div>
-                          );
-                        })}
-                      </section>
-                    ) : (
-                      <section className="eventModalSection">
-                        <h3 className="eventModalSectionTitle">Desdobramentos:</h3>
-                        <div className="emptyMini">
-                          Nenhum desdobramento anexado.
+                            );
+                          })}
                         </div>
-                      </section>
-                    )}
+                      )}
+                    </div>
+
+                    <div className="eventModalSection">
+                      <div className="sectionTitleRow">
+                        <h3>Desdobramentos das unidades</h3>
+                        <span className="sectionCounter">{displayedDesdobramentoDocuments.length}</span>
+                      </div>
+
+                      {showProfilePendingAlertInModal && (
+                        <div style={{ marginBottom: 14 }}>
+                          <MissingDesdobramentoTag
+                            text={`Falta o desdobramento da unidade ${
+                              profilePendingUnitInSelectedEvent
+                                ? getUnitCode(profilePendingUnitInSelectedEvent) ||
+                                  getUnitLabel(profilePendingUnitInSelectedEvent)
+                                : selectedDesdobramentoUnit
+                                ? getUnitCode(selectedDesdobramentoUnit) ||
+                                  getUnitLabel(selectedDesdobramentoUnit)
+                                : profileAlertUnit
+                                ? getUnitCode(profileAlertUnit) ||
+                                  getUnitLabel(profileAlertUnit)
+                                : "do seu perfil"
+                            }`}
+                          />
+                        </div>
+                      )}
+
+                      {loadingDocuments ? (
+                        <div className="emptyMini">Carregando documentos...</div>
+                      ) : displayedDesdobramentoDocuments.length === 0 ? (
+                        <div className="emptyMini">
+                          {permissions.isGestoraProfile && gestoraOwnPlanningDocument
+                            ? "Somente as unidades subordinadas precisam anexar desdobramento neste evento."
+                            : "Nenhum desdobramento anexado."}
+                        </div>
+                      ) : (
+                        <div className="documentsList modernDocumentsList">
+                          {displayedDesdobramentoDocuments.map((docItem) => {
+                            const requestedSubordinateBadges = getRequestedSubordinateBadges(docItem, unitMap);
+                            const docUnitId = String(docItem?.unitId || "").trim();
+                            const docUnitCode = normalizeCode(docItem?.unitCode);
+                            const isGestoraOwnDocument =
+                              permissions.isGestoraProfile &&
+                              (
+                                (lockedProfileUnitId && docUnitId === lockedProfileUnitId) ||
+                                (lockedProfileUnitCode && docUnitCode === lockedProfileUnitCode)
+                              );
+                            const canShowGestoraRequestedSubordinatesCard =
+                              !docItem.isDeleted &&
+                              canViewGestoraSubordinateTree &&
+                              (requestedSubordinateBadges.length > 0 || canGestoraManageRequestedSubordinates) &&
+                              (
+                                isGestoraOwnDocument ||
+                                permissions.isAIOUser ||
+                                permissions.isGlobalReader ||
+                                requestedSubordinateBadges.some((badge) => {
+                                  const badgeUnitId = String(badge?.unitId || "").trim();
+                                  const badgeUnitCode = normalizeCode(badge?.code);
+
+                                  return (
+                                    (lockedProfileUnitId && badgeUnitId === lockedProfileUnitId) ||
+                                    (lockedProfileUnitCode && badgeUnitCode === lockedProfileUnitCode)
+                                  );
+                                })
+                              );
+
+                            return (
+                              <div key={docItem.id} className="documentItem modernDocumentItem compactDocCard">
+                                <div className="documentLeftAccent unitAccent" />
+
+                                <div className="documentItemMain" style={canShowGestoraRequestedSubordinatesCard ? { paddingRight: 132 } : undefined}>
+                                  <div className="documentItemTitle">
+                                    <DocumentFileIcon fileName={docItem.fileName} />
+                                    {renderDocumentHeader(
+                                      docItem,
+                                      docItem.unitCode && docItem.unitName
+                                        ? `${docItem.unitCode} - ${docItem.unitName}`
+                                        : docItem.unitCode || docItem.unitName || "UNIDADE"
+                                    )}
+                                  </div>
+
+                                  <div className="documentPills">
+                                    <span className="documentPill success">
+                                      {docItem.unitCode || "UNIDADE"}
+                                    </span>
+
+                                    {!docItem.isDeleted && (
+                                      <>
+                                        <span className="documentPill subtle">
+                                          {docItem.uploadedByEmail || "-"}
+                                        </span>
+                                        <span className="documentPill subtle">
+                                          {fmtDateTime(docItem.uploadedAt)}
+                                        </span>
+                                      </>
+                                    )}
+
+                                    {docItem.isDeleted && (
+                                      <span className="documentPill subtle">
+                                        {fmtDateTime(docItem.deletedAt)}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {canShowGestoraRequestedSubordinatesCard ? (
+                                    <div
+                                      style={{
+                                        position: "absolute",
+                                        top: 8,
+                                        right: 10,
+                                        zIndex: 1,
+                                      }}
+                                    >
+                                      {renderDocumentActions(docItem)}
+                                    </div>
+                                  ) : null}
+
+                                  {renderGestoraRequestedSubordinatesBlock(docItem)}
+                                </div>
+
+                                {!canShowGestoraRequestedSubordinatesCard ? renderDocumentActions(docItem) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
 
                     {canShowUploadDesdobramentoSection && (
-                      <section className="eventModalSection">
-                        <h3 className="eventModalSectionTitle">
-                          Anexar desdobramento da unidade
-                        </h3>
+                      <div className="eventModalSection">
+                        <div className="sectionTitleRow">
+                          <h3>Anexar desdobramento da unidade</h3>
+                        </div>
 
                         <div className="desdobramentoUploadBox">
-                          {eligibleDesdobramentoUnits.length > 1 ? (
-                            <div className="desdobramentoUploadField">
-                              <label>Unidade para envio</label>
-                              <select
-                                value={desdobramentoUnitId}
-                                onChange={(e) =>
-                                  setDesdobramentoUnitId(e.target.value)
-                                }
-                              >
-                                {eligibleDesdobramentoUnits.map((unit) => (
-                                  <option key={unit.id} value={unit.id}>
-                                    {getUnitCode(unit)} - {getUnitLabel(unit)}
-                                  </option>
-                                ))}
-                              </select>
+                          {canGestoraManageRequestedSubordinates ? (
+                            <div className="desdobramentoUploadInfo" style={{ marginBottom: 12 }}>
+                              Quando a Gestora anexar o seu desdobramento, ela poderá indicar quais subordinadas também deverão inserir desdobramento. Depois da confirmação, essa seleção some e as unidades ficam pendentes.
                             </div>
-                          ) : (
-                            <div className="desdobramentoUploadRow">
-                              <span className="documentPill success">
-                                {selectedDesdobramentoUnit
-                                  ? `${getUnitCode(selectedDesdobramentoUnit)} - ${getUnitLabel(
-                                      selectedDesdobramentoUnit
-                                    )}`
-                                  : "UNIDADE"}
-                              </span>
+                          ) : null}
+                          
+                          
+                          <div className="desdobramentoUploadRow" style={{ flexWrap: "wrap" }}>
+                            {selectedDesdobramentoUnitsForUpload.length > 0 ? (
+                              selectedDesdobramentoUnitsForUpload.map((unit) => (
+                                <span key={`selected-${unit.id}`} className="documentPill success">
+                                  {`${getUnitCode(unit)} - ${getUnitLabel(unit)}`}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="documentPill subtle">Nenhuma unidade selecionada</span>
+                            )}
+                          </div>
+
+                          {selectedProfileUnitDesdobramentoPending && (
+                            <div style={{ marginBottom: 12 }}>
+                              <MissingDesdobramentoTag
+                                text={`Falta o desdobramento da unidade ${
+                                  profilePendingUnitInSelectedEvent
+                                    ? getUnitCode(profilePendingUnitInSelectedEvent)
+                                    : selectedDesdobramentoUnit
+                                    ? getUnitCode(selectedDesdobramentoUnit)
+                                    : profileAlertUnit
+                                    ? getUnitCode(profileAlertUnit)
+                                    : "do seu perfil"
+                                }`}
+                              />
                             </div>
                           )}
 
-                          {activeDesdobramentoForSelectedUnit ? (
+                          {selectedUploadUnitsWithExistingDocs.length > 0 ? (
                             <div className="desdobramentoUploadHint">
                               Já existe desdobramento para{" "}
                               <b>
@@ -3145,11 +7174,17 @@ export default function Home({
                                   ? `${getUnitCode(selectedDesdobramentoUnit)}`
                                   : "a unidade selecionada"}
                               </b>
-                              . Para editar, use <b>Substituir</b> na lista de
-                              documentos.
+                              . Para editar, use <b>Substituir</b> na lista de documentos.
                             </div>
                           ) : (
                             <>
+                              {permissions.isGestoraProfile && selectedUploadUnitsWithExistingDocs.length > 0 && (
+                                <div className="desdobramentoUploadHint">
+                                  As seguintes unidades já possuem desdobramento e serão ignoradas neste envio: <b>{selectedUploadUnitsWithExistingDocs
+                                    .map((item) => getUnitCode(item.unit) || getUnitLabel(item.unit))
+                                    .join(", ")}</b>.
+                                </div>
+                              )}
                               <div className="desdobramentoUploadField">
                                 <label>Arquivo do desdobramento</label>
                                 <input
@@ -3162,48 +7197,204 @@ export default function Home({
                               </div>
 
                               {desdobramentoFile && (
-                                <div className="desdobramentoUploadRow">
-                                  <span className="documentPill subtle">
-                                    {desdobramentoFile.name}
-                                  </span>
-                                </div>
+                                <>
+                                  <div className="desdobramentoUploadField">
+                                    <label>Tipo do arquivo</label>
+                                    <select
+                                      value={desdobramentoDocumentType}
+                                      onChange={(e) => setDesdobramentoDocumentType(e.target.value)}
+                                    >
+                                      {getDocumentTypeOptions("UNIT").map((option) => (
+                                        <option key={option.value} value={option.value}>
+                                          {option.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+
+                                  <div className="desdobramentoUploadRow">
+                                    <span className="documentPill subtle">
+                                      {desdobramentoFile.name}
+                                    </span>
+                                  </div>
+                                </>
                               )}
+
+                              {canGestoraManageRequestedSubordinates && showGestoraSubordinateSelectorInUpload ? (
+                                <div
+                                  style={{
+                                    marginTop: 8,
+                                    marginBottom: 12,
+                                    padding: "10px 12px",
+                                    borderRadius: 12,
+                                    border: "1px solid #dbe2ea",
+                                    background: "#f8fafc",
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "space-between",
+                                      gap: 10,
+                                      marginBottom: 10,
+                                    }}
+                                  >
+                                    <div>
+                                      <div
+                                        style={{
+                                          fontSize: 12,
+                                          fontWeight: 800,
+                                          color: "#374151",
+                                        }}
+                                      >
+                                        Escolha as subordinadas que também receberão o evento
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: 11,
+                                          color: "#6b7280",
+                                          fontWeight: 600,
+                                          marginTop: 2,
+                                        }}
+                                      >
+                                        Depois do envio do desdobramento da gestora, esta etapa some e as unidades marcadas ficam pendentes.
+                                      </div>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      className="documentActionBtn secondary iconOnlyActionBtn"
+                                      title="Fechar seleção"
+                                      aria-label="Fechar seleção"
+                                      onClick={() => setShowGestoraSubordinateSelectorInUpload(false)}
+                                      disabled={documentActionLoading === "new:desdobramento"}
+                                    >
+                                      <X size={14} />
+                                    </button>
+                                  </div>
+
+                                  <div className="desdobramentoUploadRow" style={{ marginBottom: 10, gap: 8 }}>
+                                    <button
+                                      type="button"
+                                      className="documentActionBtn secondary"
+                                      onClick={selectAllEligibleDesdobramentoUnits}
+                                      disabled={documentActionLoading === "new:desdobramento"}
+                                    >
+                                      Selecionar todas
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      className="documentActionBtn secondary"
+                                      onClick={clearEligibleDesdobramentoUnitsSelection}
+                                      disabled={documentActionLoading === "new:desdobramento"}
+                                    >
+                                      Limpar
+                                    </button>
+                                  </div>
+
+                                  <div
+                                    style={{
+                                      display: "grid",
+                                      gap: 8,
+                                      maxHeight: 220,
+                                      overflowY: "auto",
+                                      paddingRight: 4,
+                                    }}
+                                  >
+                                    {gestoraSubordinateSelectionUnits.map((unit) => {
+                                      const unitId = String(unit?.id || "").trim();
+                                      const checked = desdobramentoSelectedUnitIds.includes(unitId);
+                                      const hasExistingDoc = !!findActiveDesdobramentoForUnit(
+                                        desdobramentoDocuments,
+                                        unit
+                                      );
+
+                                      return (
+                                        <label
+                                          key={`upload-subordinate-${unitId}`}
+                                          style={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "space-between",
+                                            gap: 10,
+                                            border: "1px solid #e5e7eb",
+                                            borderRadius: 10,
+                                            padding: "8px 10px",
+                                            background: hasExistingDoc ? "#f8fafc" : "#fff",
+                                            opacity: hasExistingDoc ? 0.72 : 1,
+                                          }}
+                                        >
+                                          <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                                            <input
+                                              type="checkbox"
+                                              checked={checked}
+                                              onChange={() => toggleDesdobramentoUploadUnit(unitId)}
+                                              disabled={documentActionLoading === "new:desdobramento" || hasExistingDoc}
+                                            />
+                                            <span
+                                              style={{
+                                                fontSize: 12,
+                                                fontWeight: 700,
+                                                color: "#111827",
+                                              }}
+                                            >
+                                              {`${getUnitCode(unit)} - ${getUnitLabel(unit)}`}
+                                            </span>
+                                          </span>
+
+                                          <span className={`documentPill ${hasExistingDoc ? "success" : "subtle"}`}>
+                                            {hasExistingDoc ? "Já anexou" : "Pendente"}
+                                          </span>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ) : null}
 
                               <div className="desdobramentoUploadRow">
                                 <button
                                   type="button"
-                                  className="documentActionBtn"
+                                  className="documentActionBtn compactUploadAction iconOnlyActionBtn"
+                                  title="Anexar desdobramento"
+                                  aria-label="Anexar desdobramento"
                                   onClick={handleUploadDesdobramento}
                                   disabled={
                                     !desdobramentoFile ||
+                                    selectedDesdobramentoUnitsForUpload.length === 0 ||
                                     documentActionLoading === "new:desdobramento"
                                   }
                                 >
                                   {documentActionLoading === "new:desdobramento" ? (
                                     <Loader2
                                       size={15}
-                                      style={{
-                                        animation: "spin 0.9s linear infinite",
-                                      }}
+                                      style={{ animation: "spin 0.9s linear infinite" }}
                                     />
                                   ) : (
                                     <Upload size={15} />
                                   )}
                                   <span>
                                     {documentActionLoading === "new:desdobramento"
-                                      ? "Enviando..."
-                                      : "Anexar desdobramento"}
+                                      ? "Enviando desdobramento"
+                                      : canGestoraManageRequestedSubordinates && !showGestoraSubordinateSelectorInUpload
+                                      ? "Escolher subordinadas"
+                                      : "Confirmar envio"}
                                   </span>
                                 </button>
 
+                                
                                 {desdobramentoFile && (
                                   <button
                                     type="button"
                                     className="documentActionBtn secondary"
-                                    onClick={() => setDesdobramentoFile(null)}
-                                    disabled={
-                                      documentActionLoading === "new:desdobramento"
-                                    }
+                                    onClick={() => {
+                                      setDesdobramentoFile(null);
+                                      setShowGestoraSubordinateSelectorInUpload(false);
+                                      setDesdobramentoSelectedUnitIds(activeRequestedSubordinateUnitIds);
+                                    }}
+                                    disabled={documentActionLoading === "new:desdobramento"}
                                   >
                                     <X size={15} />
                                     <span>Limpar arquivo</span>
@@ -3212,161 +7403,12 @@ export default function Home({
                               </div>
 
                               <div className="desdobramentoUploadInfo">
-                                Após anexar, o documento ficará disponível na lista
-                                de desdobramentos.
+                                Após anexar, o documento ficará disponível na lista de desdobramentos.
                               </div>
                             </>
                           )}
                         </div>
-                      </section>
-                    )}
-
-                    {canManageSelectedEvent && (
-                      <section className="eventModalSection">
-                        <h3 className="eventModalSectionTitle">Ações do evento</h3>
-
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: 12,
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          <button
-                            type="button"
-                            onClick={handleEditEvent}
-                            disabled={
-                              actionLoading === "delete" || !!documentActionLoading
-                            }
-                            style={{
-                              border: 0,
-                              borderRadius: 14,
-                              padding: "12px 16px",
-                              cursor:
-                                actionLoading === "delete" || !!documentActionLoading
-                                  ? "not-allowed"
-                                  : "pointer",
-                              fontWeight: 800,
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 8,
-                              background: "#0a8b63",
-                              color: "#ffffff",
-                              opacity:
-                                actionLoading === "delete" || !!documentActionLoading
-                                  ? 0.7
-                                  : 1,
-                            }}
-                          >
-                            <Pencil size={16} />
-                            <span>Editar / Retificar</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={handleDeleteEvent}
-                            disabled={
-                              actionLoading === "delete" || !!documentActionLoading
-                            }
-                            style={{
-                              border: "1px solid #fecaca",
-                              borderRadius: 14,
-                              padding: "12px 16px",
-                              cursor:
-                                actionLoading === "delete" || !!documentActionLoading
-                                  ? "not-allowed"
-                                  : "pointer",
-                              fontWeight: 800,
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 8,
-                              background: "#fee2e2",
-                              color: "#991b1b",
-                              opacity:
-                                actionLoading === "delete" || !!documentActionLoading
-                                  ? 0.8
-                                  : 1,
-                            }}
-                          >
-                            {actionLoading === "delete" ? (
-                              <Loader2
-                                size={16}
-                                style={{ animation: "spin 0.9s linear infinite" }}
-                              />
-                            ) : (
-                              <Trash2 size={16} />
-                            )}
-                            <span>
-                              {actionLoading === "delete" ? "Excluindo..." : "Excluir"}
-                            </span>
-                          </button>
-                        </div>
-                      </section>
-                    )}
-
-                    {(selectedPrimaryAioDocument ||
-                      visibleDesdobramentoDocuments.length > 0) && (
-                      <section className="eventModalSection">
-                        <h3 className="eventModalSectionTitle">
-                          Gerenciar documentos
-                        </h3>
-
-                        <div
-                          style={{
-                            display: "grid",
-                            gap: 14,
-                          }}
-                        >
-                          {selectedPrimaryAioDocument && (
-                            <div
-                              style={{
-                                background: "#ffffff",
-                                border: "1px solid #e5e7eb",
-                                borderRadius: 18,
-                                padding: 16,
-                                display: "grid",
-                                gap: 12,
-                              }}
-                            >
-                              <div className="documentItemTitle">
-                                <DocumentFileIcon
-                                  fileName={selectedPrimaryAioDocument.fileName}
-                                />
-                                {renderDocumentHeader(
-                                  selectedPrimaryAioDocument,
-                                  selectedPrimaryAioDocument.uploadedByEmail || "-"
-                                )}
-                              </div>
-
-                              {renderDocumentActions(selectedPrimaryAioDocument)}
-                            </div>
-                          )}
-
-                          {visibleDesdobramentoDocuments.map((docItem) => (
-                            <div
-                              key={`manage-${docItem.id}`}
-                              style={{
-                                background: "#ffffff",
-                                border: "1px solid #e5e7eb",
-                                borderRadius: 18,
-                                padding: 16,
-                                display: "grid",
-                                gap: 12,
-                              }}
-                            >
-                              <div className="documentItemTitle">
-                                <DocumentFileIcon fileName={docItem.fileName} />
-                                {renderDocumentHeader(
-                                  docItem,
-                                  docItem.unitCode || "UNIDADE"
-                                )}
-                              </div>
-
-                              {renderDocumentActions(docItem, true)}
-                            </div>
-                          ))}
-                        </div>
-                      </section>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -3374,327 +7416,7 @@ export default function Home({
             );
           })()}
       </main>
-
-      <style>{`
-        :root {
-          --sidebar-blue: var(--sidebar-accent, #03153eff);
-        }
-
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-
-        @keyframes eventPinPulse {
-          0% {
-            transform: translate(-50%, -50%) scale(0.65);
-            opacity: 0.8;
-          }
-          70% {
-            transform: translate(-50%, -50%) scale(1.95);
-            opacity: 0;
-          }
-          100% {
-            transform: translate(-50%, -50%) scale(1.95);
-            opacity: 0;
-          }
-        }
-
-        .eventPinMarkerIcon {
-          background: transparent !important;
-          border: none !important;
-        }
-
-        .eventPinMarker {
-          position: relative;
-          width: var(--pin-width);
-          height: var(--pin-height);
-          pointer-events: auto;
-        }
-
-        .eventPinPulse {
-          position: absolute;
-          left: 50%;
-          top: var(--pulse-top);
-          width: var(--pulse-size);
-          height: var(--pulse-size);
-          border-radius: 999px;
-          background: var(--pulse-color);
-          transform: translate(-50%, -50%) scale(0.65);
-          animation: eventPinPulse 1.8s infinite ease-out;
-          pointer-events: none;
-        }
-
-        .eventPinPulseDelayed {
-          animation-delay: 0.9s;
-        }
-
-        .eventPinSvgWrap {
-          position: absolute;
-          inset: 0;
-          display: flex;
-          align-items: flex-start;
-          justify-content: center;
-          filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.24));
-          transition: transform 0.18s ease;
-        }
-
-        .eventPinMarker.isSelected .eventPinSvgWrap {
-          transform: scale(1.07);
-        }
-
-        .eventMarkerTooltip {
-          min-width: 220px;
-          max-width: 260px;
-          padding: 2px;
-        }
-
-        .eventMarkerTooltipTitle {
-          font-size: 13px;
-          font-weight: 800;
-          color: #111827;
-          line-height: 1.35;
-          margin-bottom: 8px;
-        }
-
-        .eventMarkerTooltipLine {
-          display: flex;
-          align-items: flex-start;
-          gap: 6px;
-          color: #4b5563;
-          font-size: 12px;
-          line-height: 1.4;
-          margin-bottom: 4px;
-        }
-
-        .eventMarkerTooltipLine svg {
-          flex-shrink: 0;
-          margin-top: 1px;
-        }
-
-        .eventsHeaderCompact,
-        .eventRowCompact {
-          display: grid;
-          grid-template-columns: 150px 150px minmax(260px, 1fr) 170px;
-          gap: 14px;
-          align-items: center;
-        }
-
-        .eventRowCompact {
-          padding: 16px 14px;
-          border-bottom: 1px solid #eef2f7;
-          cursor: pointer;
-          transition: background 0.18s ease;
-        }
-
-        .eventRowCompact:hover {
-          background: #f8fafc;
-        }
-
-        .colStatus {
-          display: flex;
-          align-items: center;
-          justify-content: flex-start;
-        }
-
-        .eventName {
-          font-size: 15px;
-          font-weight: 800;
-          color: #111827;
-          margin-bottom: 4px;
-        }
-
-        .eventUnitBadges {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 8px;
-          margin-top: 8px;
-        }
-
-        .eventUnitBadge,
-        .eventTag.unitStatusTag {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          padding: 6px 10px;
-          border-radius: 999px;
-          background: #f8fafc;
-          border: 1px solid #dbe3ef;
-          color: #475569;
-          font-size: 11px;
-          font-weight: 800;
-          line-height: 1;
-          white-space: nowrap;
-        }
-
-        .eventUnitBadge.originBadge,
-        .eventTag.unitStatusTag.originBadge {
-          background: #eef2ff;
-          border-color: #c7d2fe;
-          color: #3730a3;
-        }
-
-        .eventUnitBadge.hasDesdobramento,
-        .eventTag.unitStatusTag.hasDesdobramento {
-          background: #dcfce7;
-          border-color: #86efac;
-          color: #166534;
-        }
-
-        .filtersGrid .fieldSearchWide {
-          grid-column: span 2;
-          min-width: 0;
-        }
-
-        .filtersGrid .fieldSearchWide .inputWithIcon,
-        .filtersGrid .fieldSearchWide input {
-          width: 100%;
-        }
-
-        .dashboardContentGrid.mapWorkspaceExpanded {
-          position: fixed;
-          inset: 16px;
-          z-index: 1400;
-          background: #f5f7fb;
-          padding: 16px;
-          border-radius: 24px;
-          box-shadow: 0 20px 70px rgba(15, 23, 42, 0.22);
-          overflow: auto;
-          grid-template-columns: minmax(0, 1fr) 360px;
-          gap: 18px;
-        }
-
-        .dashboardContentGrid.mapWorkspaceExpanded .mainPanel,
-        .dashboardContentGrid.mapWorkspaceExpanded .rightRail {
-          min-width: 0;
-        }
-
-        .calendarDay {
-          transition:
-            background 0.16s ease,
-            transform 0.16s ease,
-            box-shadow 0.16s ease,
-            color 0.16s ease,
-            border-color 0.16s ease;
-          user-select: none;
-        }
-
-        .calendarDay:not(.calendarDayEmpty):not(.calendarDaySelected):hover {
-          background: #f8fafc;
-          transform: translateY(-1px);
-        }
-
-        .calendarDayEvent:not(.calendarDaySelected) {
-          box-shadow: inset 0 0 0 1px #93c5fd;
-        }
-
-        .calendarDayEvent:not(.calendarDaySelected):hover {
-          background: #eff6ff;
-        }
-
-        .calendarDaySelected,
-        .calendarDaySelected:hover {
-          background: var(--sidebar-blue) !important;
-          color: #ffffff !important;
-          border-color: var(--sidebar-blue) !important;
-          transform: none !important;
-          box-shadow: 0 8px 18px rgba(29, 78, 216, 0.22) !important;
-        }
-
-        .desdobramentoUploadBox {
-          display: grid;
-          gap: 12px;
-          padding: 14px;
-          border-radius: 18px;
-          border: 1px dashed #cbd5e1;
-          background: #f8fafc;
-        }
-
-        .desdobramentoUploadField {
-          display: grid;
-          gap: 6px;
-          max-width: 340px;
-        }
-
-        .desdobramentoUploadField label {
-          font-size: 12px;
-          font-weight: 700;
-          color: #6b7280;
-        }
-
-        .desdobramentoUploadRow {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 10px;
-          align-items: center;
-        }
-
-        .desdobramentoUploadHint {
-          padding: 10px 12px;
-          border-radius: 12px;
-          background: #ecfccb;
-          border: 1px solid #bef264;
-          color: #3f6212;
-          font-size: 12px;
-          font-weight: 700;
-          line-height: 1.45;
-        }
-
-        .desdobramentoUploadInfo {
-          font-size: 12px;
-          color: #6b7280;
-          font-weight: 600;
-        }
-
-        @media (max-width: 1180px) {
-          .filtersGrid .fieldSearchWide {
-            grid-column: span 2;
-          }
-        }
-
-        @media (max-width: 1100px) {
-          .eventsHeaderCompact,
-          .eventRowCompact {
-            grid-template-columns: 130px 130px minmax(220px, 1fr) 160px;
-          }
-
-          .dashboardContentGrid.mapWorkspaceExpanded {
-            grid-template-columns: 1fr;
-          }
-        }
-
-        @media (max-width: 860px) {
-          .eventsHeaderCompact {
-            display: none;
-          }
-
-          .eventRowCompact {
-            grid-template-columns: 1fr;
-            gap: 10px;
-          }
-
-          .colDate,
-          .colTime,
-          .colTitle,
-          .colStatus {
-            width: 100%;
-          }
-
-          .filtersGrid .fieldSearchWide {
-            grid-column: span 1;
-          }
-
-          .dashboardContentGrid.mapWorkspaceExpanded {
-            inset: 10px;
-            padding: 12px;
-            border-radius: 18px;
-          }
-
-          .desdobramentoUploadField {
-            max-width: 100%;
-          }
-        }
-      `}</style>
+  
     </div>
   );
 }

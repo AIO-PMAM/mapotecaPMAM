@@ -9,6 +9,25 @@ import {
   Users,
 } from "lucide-react";
 
+function normalizeAccessProfile(value) {
+  const raw = String(value || "").toUpperCase().trim();
+
+  if (raw === "COMANDO") return "COMANDO";
+  if (raw === "P-3" || raw === "P3") return "P-3";
+  if (raw === "AUXILIAR_P3" || raw === "AUXILIAR P3") return "AUXILIAR_P3";
+  if (
+    raw === "VISUALIZACAO" ||
+    raw === "VISUALIZAÇÃO" ||
+    raw === "VIEWER" ||
+    raw === "READ_ONLY" ||
+    raw === "SOMENTE_VISUALIZACAO"
+  ) {
+    return "VISUALIZACAO";
+  }
+
+  return raw;
+}
+
 export default function AppSidebar({
   user,
   claims,
@@ -21,6 +40,10 @@ export default function AppSidebar({
   const canViewAll = !!claims?.canViewAll;
   const role = claims?.role || "-";
   const unitId = claims?.unitId || "-";
+  const accessProfile = normalizeAccessProfile(claims?.accessProfile || "");
+  const isReadOnlyProfile =
+    accessProfile === "VISUALIZACAO" ||
+    claims?.permissions?.canEdit === false;
 
   async function logout() {
     await signOut(auth);
@@ -48,36 +71,46 @@ export default function AppSidebar({
           <span>Dashboard</span>
         </button>
 
-        <button
-          className={`navItem navItemCreate ${
-            active === "create-event" ? "navItemActiveCreate" : ""
-          }`}
-          onClick={() => onGoCreateEvent?.()}
-          type="button"
-        >
-          <PlusCircle size={18} />
-          <span>Criar Evento</span>
-        </button>
+        {!isReadOnlyProfile && (
+          <button
+            className={`navItem navItemCreate ${
+              active === "create-event" ? "navItemActiveCreate" : ""
+            }`}
+            onClick={() => onGoCreateEvent?.()}
+            type="button"
+          >
+            <PlusCircle size={18} />
+            <span>Criar Evento</span>
+          </button>
+        )}
+
+        {!isReadOnlyProfile && (
+          <button
+            className={`navItem ${active === "units" ? "navItemActive" : ""}`}
+            onClick={() => onGoUnits?.()}
+            type="button"
+          >
+            <Building2 size={18} />
+            <span>Unidades</span>
+          </button>
+        )}
+
+        {!isReadOnlyProfile && (
+          <button
+            className={`navItem ${active === "access" ? "navItemActive" : ""}`}
+            onClick={() => onGoAccess?.()}
+            type="button"
+          >
+            <Users size={18} />
+            <span>Acessos</span>
+          </button>
+        )}
 
         <button
-          className={`navItem ${active === "units" ? "navItemActive" : ""}`}
-          onClick={() => onGoUnits?.()}
+          className={`navItem ${active === "settings" ? "navItemActive" : ""}`}
+          onClick={() => onGoSettings?.()}
           type="button"
         >
-          <Building2 size={18} />
-          <span>Unidades</span>
-        </button>
-
-        <button
-          className={`navItem ${active === "access" ? "navItemActive" : ""}`}
-          onClick={() => onGoAccess?.()}
-          type="button"
-        >
-          <Users size={18} />
-          <span>Acessos</span>
-        </button>
-
-        <button className="navItem" type="button">
           <Settings size={18} />
           <span>Configurações</span>
         </button>
@@ -93,6 +126,9 @@ export default function AppSidebar({
         </div>
         <div className="userMeta">
           Visão total: <b>{canViewAll ? "SIM" : "NÃO"}</b>
+        </div>
+        <div className="userMeta">
+          Perfil de acesso: <b>{accessProfile || "-"}</b>
         </div>
 
         <button className="logoutBtn" onClick={logout} type="button">

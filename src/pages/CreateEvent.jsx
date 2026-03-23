@@ -35,11 +35,6 @@ const EDIT_STORAGE_KEY = "event_edit_payload";
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 const EDIT_PAYLOAD_MAX_AGE_MS = 2 * 60 * 1000;
 
-const GOOGLE_MAPS_API_KEY = String(
-  import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ""
-).trim();
-const GOOGLE_DEMO_MAP_ID = "DEMO_MAP_ID";
-
 const LOCATION_AUTOCOMPLETE_MIN_CHARS = 3;
 const LOCATION_AUTOCOMPLETE_LIMIT = 6;
 
@@ -87,35 +82,13 @@ function normalizeToDate(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function toDateInputValue(d) {
-  const date = normalizeToDate(d);
+function toDateInputValue(value) {
+  const date = normalizeToDate(value);
   if (!date) return "";
-
   const pad = (n) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
     date.getDate()
   )}`;
-}
-
-function parseDateInputValue(value) {
-  if (!value) return null;
-
-  const [year, month, day] = String(value).split("-").map(Number);
-  if (!year || !month || !day) return null;
-
-  return new Date(year, month - 1, day);
-}
-
-function startOfDay(d) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
-
-function endOfDay(d) {
-  const x = new Date(d);
-  x.setHours(23, 59, 59, 999);
-  return x;
 }
 
 function toTimeInputValue(value) {
@@ -143,6 +116,18 @@ function sortUnits(a, b) {
   const aLabel = `${getUnitCode(a)} ${getUnitLabel(a)}`.trim();
   const bLabel = `${getUnitCode(b)} ${getUnitLabel(b)}`.trim();
   return aLabel.localeCompare(bLabel, "pt-BR");
+}
+
+function collectDescendantUnitIds(unitId, childrenMap, result = new Set()) {
+  const children = childrenMap?.[unitId] || [];
+
+  for (const child of children) {
+    if (!child?.id || result.has(child.id)) continue;
+    result.add(child.id);
+    collectDescendantUnitIds(child.id, childrenMap, result);
+  }
+
+  return result;
 }
 
 function isAllowedPlanningFile(file) {
@@ -192,6 +177,7 @@ function getPlanningCategoryLabel(value) {
       return "Documento";
   }
 }
+
 
 function getPlanningStorageFolder(scope = "AIO") {
   const normalized = String(scope || "AIO").toUpperCase();
@@ -801,93 +787,152 @@ function getOriginTypeLabel(value) {
   }
 }
 
+function toArray(value) {
+  if (Array.isArray(value)) return value;
+  if (value === undefined || value === null || value === "") return [];
+  return [value];
+}
+
+function pushUniqueCandidate(target, value) {
+  for (const item of toArray(value)) {
+    const raw = String(item || "").trim();
+    if (!raw) continue;
+    if (!target.includes(raw)) {
+      target.push(raw);
+    }
+  }
+}
+
+function findUnitByReference(value, unitMap, units) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+
+  if (unitMap[raw]) return unitMap[raw];
+
+  const normalized = raw.toUpperCase();
+
+  return (
+    (units || []).find((unit) => {
+      const unitId = String(unit?.id || "").trim();
+      const unitCode = getUnitCode(unit);
+      const unitLabel = getUnitLabel(unit).toUpperCase();
+      const unitName = String(unit?.name || "").trim().toUpperCase();
+      const unitSigla = String(unit?.sigla || "").trim().toUpperCase();
+
+      return (
+        unitId === raw ||
+        unitCode === normalized ||
+        unitLabel === normalized ||
+        unitName === normalized ||
+        unitSigla === normalized
+      );
+    }) || null
+  );
+}
+
 function resolveLoginUnit({ claims, user, unitMap, units }) {
-  const possibleUnitIds = [
-    claims?.unitId,
-    claims?.userUnitId,
-    claims?.currentUnitId,
-    claims?.createdByUnitId,
-    claims?.accessUnitId,
-    claims?.unit?.id,
-    claims?.unit?.unitId,
-    claims?.currentUnit?.id,
-    claims?.currentUnit?.unitId,
-    claims?.profile?.unitId,
-    claims?.accessProfile?.unitId,
-    user?.unitId,
-    user?.userUnitId,
-    user?.currentUnitId,
-    user?.createdByUnitId,
-    user?.unit?.id,
-    user?.unit?.unitId,
-    user?.currentUnit?.id,
-    user?.currentUnit?.unitId,
-    user?.profile?.unitId,
-    user?.accessProfile?.unitId,
+  const sources = [
+    claims,
+    claims?.profile,
+    claims?.accessProfile,
+    claims?.currentProfile,
+    claims?.activeProfile,
+    claims?.currentUnit,
+    claims?.selectedUnit,
+    user,
+    user?.profile,
+    user?.accessProfile,
+    user?.currentProfile,
+    user?.activeProfile,
+    user?.currentUnit,
+    user?.selectedUnit,
   ].filter(Boolean);
 
-  for (const unitId of possibleUnitIds) {
-    if (unitMap[unitId]) return unitMap[unitId];
+  const precisePaths = [
+    "selectedUnitId",
+    "currentSelectedUnitId",
+    "currentScopeUnitId",
+    "selectedScopeUnitId",
+    "scopeUnitId",
+    "accessUnitId",
+    "unitId",
+    "userUnitId",
+    "currentUnitId",
+    "createdByUnitId",
+    "unit.id",
+    "unit.unitId",
+    "currentUnit.id",
+    "currentUnit.unitId",
+    "selectedUnit.id",
+    "selectedUnit.unitId",
+
+    "selectedUnitCode",
+    "currentSelectedUnitCode",
+    "currentScopeUnitCode",
+    "selectedScopeUnitCode",
+    "scopeUnitCode",
+    "unitCode",
+    "userUnitCode",
+    "currentUnitCode",
+    "createdByUnitCode",
+    "unit.code",
+    "unit.sigla",
+    "currentUnit.code",
+    "currentUnit.sigla",
+    "selectedUnit.code",
+    "selectedUnit.sigla",
+
+    "selectedUnitName",
+    "currentSelectedUnitName",
+    "currentScopeUnitName",
+    "selectedScopeUnitName",
+    "scopeUnitName",
+    "unitName",
+    "userUnitName",
+    "currentUnitName",
+    "createdByUnitName",
+    "unit.name",
+    "currentUnit.name",
+    "selectedUnit.name",
+  ];
+
+  const arrayPaths = [
+    "accessScopeUnitIds",
+    "scopeUnitIds",
+    "unitIds",
+    "accessScopeUnitCodes",
+    "scopeUnitCodes",
+    "unitCodes",
+    "accessScopeUnitNames",
+    "scopeUnitNames",
+    "unitNames",
+  ];
+
+  const preciseCandidates = [];
+  for (const source of sources) {
+    for (const path of precisePaths) {
+      pushUniqueCandidate(preciseCandidates, getValueByPath(source, path));
+    }
   }
 
-  const possibleUnitCodes = [
-    claims?.unitCode,
-    claims?.userUnitCode,
-    claims?.currentUnitCode,
-    claims?.createdByUnitCode,
-    claims?.unit?.code,
-    claims?.unit?.sigla,
-    claims?.currentUnit?.code,
-    claims?.currentUnit?.sigla,
-    claims?.profile?.unitCode,
-    claims?.accessProfile?.unitCode,
-    user?.unitCode,
-    user?.userUnitCode,
-    user?.currentUnitCode,
-    user?.createdByUnitCode,
-    user?.unit?.code,
-    user?.unit?.sigla,
-    user?.currentUnit?.code,
-    user?.currentUnit?.sigla,
-    user?.profile?.unitCode,
-    user?.accessProfile?.unitCode,
-  ]
-    .map((value) => String(value || "").trim().toUpperCase())
-    .filter(Boolean);
-
-  for (const unitCode of possibleUnitCodes) {
-    const foundByCode = (units || []).find(
-      (unit) => getUnitCode(unit) === unitCode
-    );
-    if (foundByCode) return foundByCode;
+  for (const candidate of preciseCandidates) {
+    const found = findUnitByReference(candidate, unitMap, units);
+    if (found) return found;
   }
 
-  const possibleUnitNames = [
-    claims?.unitName,
-    claims?.userUnitName,
-    claims?.currentUnitName,
-    claims?.createdByUnitName,
-    claims?.unit?.name,
-    claims?.currentUnit?.name,
-    claims?.profile?.unitName,
-    claims?.accessProfile?.unitName,
-    user?.unitName,
-    user?.userUnitName,
-    user?.currentUnitName,
-    user?.createdByUnitName,
-    user?.unit?.name,
-    user?.currentUnit?.name,
-    user?.profile?.unitName,
-    user?.accessProfile?.unitName,
-  ]
-    .map((value) => String(value || "").trim())
-    .filter(Boolean);
+  const singleScopeCandidates = [];
+  for (const source of sources) {
+    for (const path of arrayPaths) {
+      const values = toArray(getValueByPath(source, path)).filter(Boolean);
+      if (values.length === 1) {
+        pushUniqueCandidate(singleScopeCandidates, values[0]);
+      }
+    }
+  }
 
-  for (const unitName of possibleUnitNames) {
-    const foundByName = (units || []).find(
-      (unit) => getUnitLabel(unit).toUpperCase() === unitName.toUpperCase()
-    );
-    if (foundByName) return foundByName;
+  for (const candidate of singleScopeCandidates) {
+    const found = findUnitByReference(candidate, unitMap, units);
+    if (found) return found;
   }
 
   return null;
@@ -901,200 +946,113 @@ function createPlanningFileItem(file, category = "PLANO") {
   };
 }
 
-function loadGoogleMapsApi(apiKey) {
-  if (!apiKey) {
-    return Promise.reject(
-      new Error("Defina VITE_GOOGLE_MAPS_API_KEY no arquivo .env.")
-    );
-  }
+function buildEmbeddedPlanningDocument({
+  existingId = null,
+  file,
+  fileCategory,
+  storagePath,
+  downloadURL,
+  planningOwnerScope,
+  planningOriginMeta,
+  user,
+  uploadedAt = null,
+}) {
+  const uploadedAtIso = uploadedAt || new Date().toISOString();
 
-  if (window.google?.maps?.importLibrary) {
-    return Promise.resolve(window.google.maps);
-  }
+  return {
+    id:
+      existingId ||
+      `embedded_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+    documentGroup: "PLANNING",
+    documentScope: String(planningOwnerScope || "AIO")
+      .trim()
+      .toUpperCase(),
 
-  return new Promise((resolve, reject) => {
-    const existing = document.getElementById("google-maps-js");
+    origin: String(planningOriginMeta?.origin || "AIO")
+      .trim()
+      .toUpperCase(),
+    originType: String(
+      planningOriginMeta?.originType || planningOriginMeta?.origin || "AIO"
+    )
+      .trim()
+      .toUpperCase(),
 
-    if (existing) {
-      existing.addEventListener(
-        "load",
-        () => resolve(window.google.maps),
-        { once: true }
-      );
-      existing.addEventListener(
-        "error",
-        () => reject(new Error("Falha ao carregar Google Maps.")),
-        { once: true }
-      );
-      return;
-    }
+    originUnitId: planningOriginMeta?.originUnitId || null,
+    originUnitCode: planningOriginMeta?.originUnitCode || null,
+    originUnitName: planningOriginMeta?.originUnitName || null,
 
-    const script = document.createElement("script");
-    script.id = "google-maps-js";
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&loading=async&v=weekly`;
-    script.async = true;
-    script.defer = true;
+    unitId: planningOriginMeta?.unitId || null,
+    unitCode: planningOriginMeta?.unitCode || null,
+    unitName: planningOriginMeta?.unitName || null,
+    unitPath: planningOriginMeta?.unitPath || null,
 
-    script.onload = () => {
-      if (window.google?.maps) {
-        resolve(window.google.maps);
-      } else {
-        reject(new Error("Google Maps não ficou disponível após o carregamento."));
-      }
-    };
+    fileName: file?.name || "Documento",
+    fileType: file?.type || "",
+    category: normalizePlanningCategory(fileCategory),
 
-    script.onerror = () => {
-      reject(new Error("Não foi possível carregar o Google Maps."));
-    };
+    storagePath,
+    downloadURL,
 
-    document.head.appendChild(script);
-  });
+    uploadedByUid: user?.uid || null,
+    uploadedByEmail: user?.email || null,
+    uploadedAt: uploadedAtIso,
+    updatedAt: uploadedAtIso,
+    isDeleted: false,
+  };
 }
 
-function MiniGoogleMapPreview({ lat, lng, title, subtitle }) {
-  const mapContainerRef = useRef(null);
-  const markerRef = useRef(null);
-  const infoWindowRef = useRef(null);
-  const mapRef = useRef(null);
-  const [mapError, setMapError] = useState("");
+function buildEmbeddedPlanningDocumentFromStoredDoc(docItem = {}) {
+  const uploadedAtDate = normalizeToDate(docItem?.uploadedAt);
+  const updatedAtDate = normalizeToDate(docItem?.updatedAt);
 
-  useEffect(() => {
-    let mounted = true;
+  const uploadedAtIso = uploadedAtDate
+    ? uploadedAtDate.toISOString()
+    : docItem?.uploadedAt || new Date().toISOString();
 
-    async function initMap() {
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+  const updatedAtIso = updatedAtDate
+    ? updatedAtDate.toISOString()
+    : docItem?.updatedAt || uploadedAtIso;
 
-      try {
-        setMapError("");
+  return {
+    id:
+      String(docItem?.id || "").trim() ||
+      `embedded_existing_${Date.now()}_${Math.random()
+        .toString(36)
+        .slice(2, 10)}`,
+    documentGroup: "PLANNING",
+    documentScope: String(docItem?.documentScope || "AIO")
+      .trim()
+      .toUpperCase(),
 
-        await loadGoogleMapsApi(GOOGLE_MAPS_API_KEY);
+    origin: String(docItem?.origin || docItem?.originType || "AIO")
+      .trim()
+      .toUpperCase(),
+    originType: String(docItem?.originType || docItem?.origin || "AIO")
+      .trim()
+      .toUpperCase(),
 
-        const [{ Map, InfoWindow }, { AdvancedMarkerElement }] =
-          await Promise.all([
-            google.maps.importLibrary("maps"),
-            google.maps.importLibrary("marker"),
-          ]);
+    originUnitId: docItem?.originUnitId || null,
+    originUnitCode: docItem?.originUnitCode || null,
+    originUnitName: docItem?.originUnitName || null,
 
-        if (!mounted || !mapContainerRef.current) return;
+    unitId: docItem?.unitId || null,
+    unitCode: docItem?.unitCode || null,
+    unitName: docItem?.unitName || null,
+    unitPath: docItem?.unitPath || null,
 
-        const position = { lat, lng };
+    fileName: docItem?.fileName || "Documento",
+    fileType: docItem?.fileType || "",
+    category: normalizePlanningCategory(docItem?.category),
 
-        const map = new Map(mapContainerRef.current, {
-          center: position,
-          zoom: 16,
-          mapTypeId: google.maps.MapTypeId.ROADMAP,
-          mapTypeControl: true,
-          streetViewControl: false,
-          fullscreenControl: false,
-          mapId: GOOGLE_DEMO_MAP_ID,
-        });
+    storagePath: docItem?.storagePath || "",
+    downloadURL: docItem?.downloadURL || "",
 
-        mapRef.current = map;
-        infoWindowRef.current = new InfoWindow();
-
-        const marker = new AdvancedMarkerElement({
-          map,
-          position,
-          title: title || "Local do evento",
-        });
-
-        markerRef.current = marker;
-
-        const content = `
-          <div style="min-width:220px; max-width:280px; font-family:Arial,sans-serif;">
-            <div style="font-size:14px; font-weight:800; color:#111827; margin-bottom:8px;">
-              ${title || "Local do evento"}
-            </div>
-            ${
-              subtitle
-                ? `<div style="font-size:12px; color:#4b5563; line-height:1.45;">${subtitle}</div>`
-                : ""
-            }
-            <div style="font-size:12px; color:#6b7280; margin-top:8px;">
-              Latitude: ${lat} • Longitude: ${lng}
-            </div>
-          </div>
-        `;
-
-        marker.addListener("gmp-click", () => {
-          if (!infoWindowRef.current) return;
-
-          infoWindowRef.current.setContent(content);
-          infoWindowRef.current.open({
-            map,
-            anchor: marker,
-            shouldFocus: false,
-          });
-        });
-      } catch (error) {
-        console.error("Erro ao iniciar Google Maps:", error);
-        if (mounted) {
-          setMapError(
-            "Não foi possível carregar o Google Maps. Verifique a chave da API."
-          );
-        }
-      }
-    }
-
-    initMap();
-
-    return () => {
-      mounted = false;
-
-      if (markerRef.current) {
-        try {
-          markerRef.current.map = null;
-        } catch (_) {}
-        markerRef.current = null;
-      }
-
-      infoWindowRef.current = null;
-      mapRef.current = null;
-    };
-  }, [lat, lng, title, subtitle]);
-
-  return (
-    <div>
-      {mapError && (
-        <div
-          style={{
-            padding: "12px",
-            borderBottom: "1px solid #e5e7eb",
-            background: "#fff7ed",
-            color: "#9a3412",
-            fontSize: 12,
-            fontWeight: 700,
-          }}
-        >
-          {mapError}
-        </div>
-      )}
-
-      {!GOOGLE_MAPS_API_KEY && (
-        <div
-          style={{
-            padding: "12px",
-            borderBottom: "1px solid #e5e7eb",
-            background: "#eff6ff",
-            color: "#1d4ed8",
-            fontSize: 12,
-            fontWeight: 700,
-          }}
-        >
-          Defina VITE_GOOGLE_MAPS_API_KEY no arquivo .env para ativar o mapa.
-        </div>
-      )}
-
-      <div
-        ref={mapContainerRef}
-        style={{
-          width: "100%",
-          height: 220,
-          background: "#f3f4f6",
-        }}
-      />
-    </div>
-  );
+    uploadedByUid: docItem?.uploadedByUid || null,
+    uploadedByEmail: docItem?.uploadedByEmail || null,
+    uploadedAt: uploadedAtIso,
+    updatedAt: updatedAtIso,
+    isDeleted: docItem?.isDeleted === true,
+  };
 }
 
 export default function CreateEvent({
@@ -1115,9 +1073,8 @@ export default function CreateEvent({
 
   const [titulo, setTitulo] = useState("");
   const [local, setLocal] = useState("");
-  const [descricao, setDescricao] = useState("");
   const [publicoEstimado, setPublicoEstimado] = useState("");
-  const [tipoOperacao, setTipoOperacao] = useState("INTEGRADO");
+  const [tipoOperacao, setTipoOperacao] = useState("CENTRALIZADO");
   const [status, setStatus] = useState("PREVISTO");
 
   const [responsibleUnitIds, setResponsibleUnitIds] = useState([]);
@@ -1159,9 +1116,8 @@ export default function CreateEvent({
   function resetForm() {
     setTitulo("");
     setLocal("");
-    setDescricao("");
     setPublicoEstimado("");
-    setTipoOperacao("INTEGRADO");
+    setTipoOperacao("CENTRALIZADO");
     setStatus("PREVISTO");
     setResponsibleUnitIds([]);
     setResponsibleUnitToAddId("");
@@ -1222,7 +1178,6 @@ export default function CreateEvent({
 
     setTitulo(editingEvent.title || editingEvent.name || "");
     setLocal(editingEvent.location || "");
-    setDescricao(editingEvent.description || "");
     setPublicoEstimado(
       editingEvent.estimatedPublic !== undefined &&
         editingEvent.estimatedPublic !== null
@@ -1230,7 +1185,7 @@ export default function CreateEvent({
         : ""
     );
     setTipoOperacao(
-      editingEvent.operationType || editingEvent.type || "INTEGRADO"
+      editingEvent.operationType || editingEvent.type || "CENTRALIZADO"
     );
     setStatus(normalizeStatusValue(editingEvent.status));
     setPlanningCategory(
@@ -1434,30 +1389,6 @@ export default function CreateEvent({
     return result;
   }, [rootUnits, childrenMap]);
 
-  const availableResponsibleOptions = useMemo(() => {
-    return unitOptions.filter(
-      (opt) =>
-        !responsibleUnitIds.includes(opt.id) &&
-        !participantUnitIds.includes(opt.id)
-    );
-  }, [unitOptions, responsibleUnitIds, participantUnitIds]);
-
-  const availableParticipantOptions = useMemo(() => {
-    return unitOptions.filter(
-      (opt) =>
-        !participantUnitIds.includes(opt.id) &&
-        !responsibleUnitIds.includes(opt.id)
-    );
-  }, [unitOptions, participantUnitIds, responsibleUnitIds]);
-
-  const selectedResponsibleUnits = useMemo(() => {
-    return responsibleUnitIds.map((id) => unitMap[id]).filter(Boolean);
-  }, [responsibleUnitIds, unitMap]);
-
-  const selectedParticipantUnits = useMemo(() => {
-    return participantUnitIds.map((id) => unitMap[id]).filter(Boolean);
-  }, [participantUnitIds, unitMap]);
-
   const loginUnit = useMemo(() => {
     return resolveLoginUnit({ claims, user, unitMap, units });
   }, [claims, user, unitMap, units]);
@@ -1484,7 +1415,7 @@ export default function CreateEvent({
           : "Unidade geradora não identificada"),
       path: savedPath,
     };
-  }, [editingEvent]);
+  }, [editingEvent, unitMap]);
 
   const automaticOrigin = useMemo(() => {
     if (isEditMode && savedOrigin) {
@@ -1552,6 +1483,41 @@ export default function CreateEvent({
 
   const origem = automaticOrigin.type;
 
+  const fixedResponsibleUnitId = useMemo(() => {
+    if (automaticOrigin.type === "AIO") return "";
+    return automaticOrigin.id || loginUnit?.id || "";
+  }, [automaticOrigin, loginUnit]);
+
+  const effectiveResponsibleUnitIds = useMemo(() => {
+    return fixedResponsibleUnitId
+      ? uniqueIds([fixedResponsibleUnitId, ...responsibleUnitIds])
+      : uniqueIds(responsibleUnitIds);
+  }, [fixedResponsibleUnitId, responsibleUnitIds]);
+
+  const effectiveParticipantUnitIds = useMemo(() => {
+    return participantUnitIds.filter(
+      (id) => !effectiveResponsibleUnitIds.includes(id)
+    );
+  }, [participantUnitIds, effectiveResponsibleUnitIds]);
+
+  const canEditResponsibleSelection = automaticOrigin.type === "AIO";
+
+  const availableResponsibleOptions = useMemo(() => {
+    if (!canEditResponsibleSelection) return [];
+
+    return unitOptions.filter(
+      (opt) =>
+        !effectiveResponsibleUnitIds.includes(opt.id) &&
+        !effectiveParticipantUnitIds.includes(opt.id)
+    );
+  }, [
+    unitOptions,
+    canEditResponsibleSelection,
+    effectiveResponsibleUnitIds,
+    effectiveParticipantUnitIds,
+  ]);
+
+
   const currentUserIsAio = useMemo(() => {
     if (isAioRole(claims?.role)) return true;
     if (!loginUnit) return false;
@@ -1564,6 +1530,91 @@ export default function CreateEvent({
       label.includes("ASSESSORIA DE INTEGRAÇÃO OPERACIONAL")
     );
   }, [claims?.role, loginUnit]);
+
+  const canChooseIntegratedOperation = currentUserIsAio;
+
+  useEffect(() => {
+    if (isEditMode) return;
+    if (canChooseIntegratedOperation) return;
+
+    if (tipoOperacao !== "CENTRALIZADO") {
+      setTipoOperacao("CENTRALIZADO");
+    }
+  }, [isEditMode, canChooseIntegratedOperation, tipoOperacao]);
+
+  const loginUnitHasSubordinates = useMemo(() => {
+    if (!loginUnit?.id) return false;
+    return (childrenMap?.[loginUnit.id] || []).length > 0;
+  }, [loginUnit, childrenMap]);
+
+  const scopedParticipantBaseOptions = useMemo(() => {
+    if (currentUserIsAio) return unitOptions;
+
+    const isGestoraScope =
+      automaticOrigin.type === "UNIDADE_GESTORA" || loginUnitHasSubordinates;
+
+    if (!isGestoraScope || !loginUnit?.id) return [];
+
+    const allowedIds = collectDescendantUnitIds(
+      loginUnit.id,
+      childrenMap,
+      new Set()
+    );
+
+    allowedIds.delete(loginUnit.id);
+
+    return unitOptions.filter((opt) => allowedIds.has(opt.id));
+  }, [
+    currentUserIsAio,
+    automaticOrigin.type,
+    loginUnitHasSubordinates,
+    loginUnit,
+    childrenMap,
+    unitOptions,
+  ]);
+
+  const availableParticipantOptions = useMemo(() => {
+    return scopedParticipantBaseOptions.filter(
+      (opt) =>
+        !effectiveParticipantUnitIds.includes(opt.id) &&
+        !effectiveResponsibleUnitIds.includes(opt.id)
+    );
+  }, [
+    scopedParticipantBaseOptions,
+    effectiveParticipantUnitIds,
+    effectiveResponsibleUnitIds,
+  ]);
+
+  useEffect(() => {
+    if (!unitToAddId) return;
+
+    const stillAvailable = availableParticipantOptions.some(
+      (option) => option.id === unitToAddId
+    );
+
+    if (!stillAvailable) {
+      setUnitToAddId("");
+    }
+  }, [unitToAddId, availableParticipantOptions]);
+
+  const selectedResponsibleUnits = useMemo(() => {
+    return effectiveResponsibleUnitIds.map((id) => unitMap[id]).filter(Boolean);
+  }, [effectiveResponsibleUnitIds, unitMap]);
+
+  const selectedParticipantUnits = useMemo(() => {
+    return effectiveParticipantUnitIds.map((id) => unitMap[id]).filter(Boolean);
+  }, [effectiveParticipantUnitIds, unitMap]);
+
+  useEffect(() => {
+    if (!fixedResponsibleUnitId) return;
+
+    setResponsibleUnitIds((prev) => uniqueIds([fixedResponsibleUnitId, ...prev]));
+    setParticipantUnitIds((prev) =>
+      prev.filter((id) => id !== fixedResponsibleUnitId)
+    );
+    setResponsibleUnitToAddId("");
+  }, [fixedResponsibleUnitId]);
+
 
   const unitEventPermissions = useMemo(() => {
     return resolveUnitEventPermissions({
@@ -1781,6 +1832,11 @@ export default function CreateEvent({
   }, []);
 
   const hasResolvedLocation = lat !== "" && lng !== "";
+  const miniMapSrc = hasResolvedLocation
+    ? `https://www.google.com/maps?q=${encodeURIComponent(
+        `${lat},${lng}`
+      )}&z=16&output=embed`
+    : "";
 
   function limparMensagens() {
     if (erro) setErro("");
@@ -1788,11 +1844,13 @@ export default function CreateEvent({
   }
 
   function addResponsibleUnit() {
+    if (!canEditResponsibleSelection) return;
+
     limparMensagens();
 
     if (!responsibleUnitToAddId) return;
     if (!unitMap[responsibleUnitToAddId]) return;
-    if (responsibleUnitIds.includes(responsibleUnitToAddId)) return;
+    if (effectiveResponsibleUnitIds.includes(responsibleUnitToAddId)) return;
 
     setResponsibleUnitIds((prev) => [...prev, responsibleUnitToAddId]);
     setParticipantUnitIds((prev) =>
@@ -1802,6 +1860,8 @@ export default function CreateEvent({
   }
 
   function removeResponsibleUnit(unitIdToRemove) {
+    if (!canEditResponsibleSelection) return;
+
     setResponsibleUnitIds((prev) =>
       prev.filter((id) => id !== unitIdToRemove)
     );
@@ -1812,8 +1872,8 @@ export default function CreateEvent({
 
     if (!unitToAddId) return;
     if (!unitMap[unitToAddId]) return;
-    if (participantUnitIds.includes(unitToAddId)) return;
-    if (responsibleUnitIds.includes(unitToAddId)) return;
+    if (effectiveParticipantUnitIds.includes(unitToAddId)) return;
+    if (effectiveResponsibleUnitIds.includes(unitToAddId)) return;
 
     setParticipantUnitIds((prev) => [...prev, unitToAddId]);
     setUnitToAddId("");
@@ -2008,6 +2068,13 @@ export default function CreateEvent({
       return false;
     }
 
+    if (origem !== "AIO" && !automaticOrigin.id) {
+      setErro(
+        "Não foi possível identificar a unidade do perfil logado. Verifique o vínculo da unidade antes de salvar."
+      );
+      return false;
+    }
+
     if (!local.trim()) {
       setErro("Informe o endereço da operação/evento.");
       return false;
@@ -2036,12 +2103,22 @@ export default function CreateEvent({
       return false;
     }
 
-    if (responsibleUnitIds.length === 0) {
+    if (effectiveResponsibleUnitIds.length === 0) {
       setErro("Selecione ao menos uma unidade principal responsável.");
       return false;
     }
 
-    const invalidResponsible = responsibleUnitIds.some((id) => !unitMap[id]);
+    if (
+      fixedResponsibleUnitId &&
+      !effectiveResponsibleUnitIds.includes(fixedResponsibleUnitId)
+    ) {
+      setErro("A unidade do perfil precisa permanecer como responsável principal.");
+      return false;
+    }
+
+    const invalidResponsible = effectiveResponsibleUnitIds.some(
+      (id) => !unitMap[id]
+    );
     if (invalidResponsible) {
       setErro("Uma das unidades responsáveis selecionadas é inválida.");
       return false;
@@ -2182,7 +2259,10 @@ export default function CreateEvent({
       const startAt = buildDateTime(dataInicio, horaInicio);
       const endAt = buildDateTime(dataFim, horaFim);
 
-      const primaryResponsibleId = responsibleUnitIds[0];
+      const normalizedResponsibleUnitIds = effectiveResponsibleUnitIds;
+      const normalizedParticipantUnitIds = effectiveParticipantUnitIds;
+
+      const primaryResponsibleId = normalizedResponsibleUnitIds[0];
       const primaryRootUnit = getRootUnit(primaryResponsibleId);
       const originUnitPayload = automaticOrigin;
 
@@ -2231,7 +2311,7 @@ export default function CreateEvent({
                   : null),
             };
 
-      const responsibleUnits = responsibleUnitIds
+      const responsibleUnits = normalizedResponsibleUnitIds
         .map((id) => {
           const unit = unitMap[id];
           if (!unit) return null;
@@ -2252,7 +2332,11 @@ export default function CreateEvent({
         .filter(Boolean);
 
       const directUnitIds = Array.from(
-        new Set([...responsibleUnitIds, ...participantUnitIds].filter(Boolean))
+        new Set(
+          [...normalizedResponsibleUnitIds, ...normalizedParticipantUnitIds].filter(
+            Boolean
+          )
+        )
       );
 
       const visibleToUnitIdsSet = new Set(directUnitIds);
@@ -2295,7 +2379,7 @@ export default function CreateEvent({
 
       const commands = Array.from(
         new Set(
-          responsibleUnitIds
+          normalizedResponsibleUnitIds
             .map((id) => getRootUnit(id))
             .filter(Boolean)
             .map((unit) => getUnitCode(unit) || getUnitLabel(unit))
@@ -2307,29 +2391,124 @@ export default function CreateEvent({
         ? doc(db, "events", editingEventId)
         : doc(collection(db, "events"));
 
-      if (!isEditMode) {
-        await setDoc(
-          eventRef,
-          {
-            title: titulo.trim() || "Evento em criação",
-            name: titulo.trim() || "Evento em criação",
-            originType: origem,
-            createdByUnitId: originUnitPayload.id || null,
-            createdByUnitCode: originUnitPayload.code || null,
-            createdByUnitName: originUnitPayload.name || null,
+      const batch = writeBatch(db);
+      const planningDocumentsPayload = [];
+      const newlyEmbeddedPlanningDocuments = [];
+      const replacementEmbeddedPlanningDocuments = {};
+      const replacementEntries = Object.entries(replacedExistingDocs || {});
+
+      const existingVisibleCount = canManagePlanningDocuments
+        ? visibleExistingPlanningDocs.length
+        : 0;
+
+      const pendingNewPlanningCount = canManagePlanningDocuments
+        ? planningFiles.length
+        : 0;
+
+      const totalPlanningDocuments =
+        existingVisibleCount + pendingNewPlanningCount;
+
+      const hasPlanningDocuments = totalPlanningDocuments > 0;
+
+      const eventPayload = {
+        title: titulo.trim(),
+        name: titulo.trim(),
+        location: local.trim(),
+        locationResolvedLabel:
+          resolvedLocation.meta?.compactLabel ||
+          resolvedLocation.displayName ||
+          local.trim(),
+        locationMeta: resolvedLocation.meta || null,
+        estimatedPublic: publicoEstimado ? Number(publicoEstimado) : 0,
+        operationType: tipoOperacao,
+        type: tipoOperacao,
+        status,
+        originType: origem,
+
+        command: getUnitCode(primaryRootUnit) || getUnitLabel(primaryRootUnit),
+        commands,
+
+        createdByUnitId: originUnitPayload.id,
+        createdByUnitCode: originUnitPayload.code || null,
+        createdByUnitName: originUnitPayload.name || null,
+        unitPath: originUnitPayload.path || null,
+
+        responsibleUnitIds: normalizedResponsibleUnitIds,
+        responsibleUnits,
+        responsibleUnitPaths: responsibleUnits.map((u) => u.unitPath),
+
+        participantUnitIds: normalizedParticipantUnitIds,
+        involvedUnits,
+        involvedUnitsCount: involvedUnits.length,
+
+        visibleToUnitIds,
+        visibleToUnitCodes,
+        visibleToUnitPaths,
+
+        hasPlanningDocument: hasPlanningDocuments,
+        planningCategory: hasPlanningDocuments
+          ? normalizePlanningCategory(planningCategory)
+          : null,
+        planningDocumentsCount: hasPlanningDocuments
+          ? totalPlanningDocuments
+          : 0,
+        planningDocumentScope: hasPlanningDocuments ? planningOwnerScope : null,
+        planningOwnerUnitId:
+          hasPlanningDocuments && planningOwnerScope === "UNIT"
+            ? planningOriginMeta.originUnitId
+            : null,
+        planningOwnerUnitCode:
+          hasPlanningDocuments && planningOwnerScope === "UNIT"
+            ? planningOriginMeta.originUnitCode
+            : null,
+        planningOwnerUnitName:
+          hasPlanningDocuments && planningOwnerScope === "UNIT"
+            ? planningOriginMeta.originUnitName
+            : null,
+
+        startAt,
+        endAt,
+
+        lat: resolvedLocation.lat,
+        lng: resolvedLocation.lng,
+
+        draftStage: "READY",
+      };
+
+      const eventWritePayload = isEditMode
+        ? {
+            ...eventPayload,
+            updatedAt: serverTimestamp(),
+            updatedByUid: user?.uid || null,
+            updatedByEmail: user?.email || null,
+            updatedByRole: claims?.role || null,
+
+            retifiedAt: serverTimestamp(),
+            retifiedByUid: user?.uid || null,
+            retifiedByEmail: user?.email || null,
+
+            revision: Number(editingEvent?.revision || 1) + 1,
+            distributionVersion:
+              Number(editingEvent?.distributionVersion || 1) + 1,
+            distributionTriggerAt: serverTimestamp(),
+            distributionStatus: "PENDING_RETIFICATION",
+            distributionType: "RETIFICACAO",
+          }
+        : {
+            ...eventPayload,
+            createdAt: serverTimestamp(),
             createdByUid: user?.uid || null,
             createdByEmail: user?.email || null,
             createdByRole: claims?.role || null,
-            draftStage: "UPLOADING_DOCUMENTS",
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
-      }
 
-      const batch = writeBatch(db);
-      const planningDocumentsPayload = [];
+            revision: 1,
+            distributionVersion: 1,
+            distributionTriggerAt: serverTimestamp(),
+            distributionStatus: "PENDING",
+            distributionType: "NOVO_EVENTO",
+          };
+
+      await setDoc(eventRef, eventWritePayload, { merge: true });
 
       if (canManagePlanningDocuments && planningFiles.length > 0) {
         for (const item of planningFiles) {
@@ -2355,12 +2534,25 @@ export default function CreateEvent({
             uploadedByEmail: user?.email || null,
             uploadedAt: serverTimestamp(),
           });
+
+          newlyEmbeddedPlanningDocuments.push(
+            buildEmbeddedPlanningDocument({
+              file,
+              fileCategory,
+              storagePath,
+              downloadURL,
+              planningOwnerScope,
+              planningOriginMeta,
+              user,
+            })
+          );
         }
       }
 
-      const replacementEntries = Object.entries(replacedExistingDocs);
       for (const [docId, file] of replacementEntries) {
-        const currentDoc = existingPlanningDocs.find((item) => item.id === docId);
+        const currentDoc = existingPlanningDocs.find(
+          (item) => item.id === docId
+        );
         if (!currentDoc || !file) continue;
 
         const folder = getPlanningStorageFolder(
@@ -2408,9 +2600,12 @@ export default function CreateEvent({
               planningOriginMeta.originUnitName ||
               null,
             unitId: currentDoc.unitId ?? planningOriginMeta.unitId ?? null,
-            unitCode: currentDoc.unitCode || planningOriginMeta.unitCode || null,
-            unitName: currentDoc.unitName || planningOriginMeta.unitName || null,
-            unitPath: currentDoc.unitPath || planningOriginMeta.unitPath || null,
+            unitCode:
+              currentDoc.unitCode || planningOriginMeta.unitCode || null,
+            unitName:
+              currentDoc.unitName || planningOriginMeta.unitName || null,
+            unitPath:
+              currentDoc.unitPath || planningOriginMeta.unitPath || null,
 
             fileName: file.name,
             fileType: file.type || "",
@@ -2438,118 +2633,79 @@ export default function CreateEvent({
           },
           { merge: true }
         );
+
+        replacementEmbeddedPlanningDocuments[docId] =
+          buildEmbeddedPlanningDocument({
+            existingId: docId,
+            file,
+            fileCategory: normalizePlanningCategory(currentDoc.category),
+            storagePath,
+            downloadURL,
+            planningOwnerScope:
+              currentDoc.documentScope || planningDocsFilterConfig.scope,
+            planningOriginMeta: {
+              origin:
+                currentDoc.origin ||
+                currentDoc.originType ||
+                planningOriginMeta.origin,
+              originType:
+                currentDoc.originType || planningOriginMeta.originType,
+              originUnitId:
+                currentDoc.originUnitId ??
+                currentDoc.unitId ??
+                planningOriginMeta.originUnitId ??
+                null,
+              originUnitCode:
+                currentDoc.originUnitCode ||
+                currentDoc.unitCode ||
+                planningOriginMeta.originUnitCode ||
+                null,
+              originUnitName:
+                currentDoc.originUnitName ||
+                currentDoc.unitName ||
+                planningOriginMeta.originUnitName ||
+                null,
+              unitId: currentDoc.unitId ?? planningOriginMeta.unitId ?? null,
+              unitCode:
+                currentDoc.unitCode || planningOriginMeta.unitCode || null,
+              unitName:
+                currentDoc.unitName || planningOriginMeta.unitName || null,
+              unitPath:
+                currentDoc.unitPath || planningOriginMeta.unitPath || null,
+            },
+            user,
+          });
       }
 
-      const totalPlanningDocuments = canManagePlanningDocuments
-        ? visibleExistingPlanningDocs.length + planningDocumentsPayload.length
-        : 0;
+      const embeddedPlanningDocuments = [];
 
-      const hasPlanningDocuments = totalPlanningDocuments > 0;
+      for (const currentDoc of visibleExistingPlanningDocs) {
+        if (!currentDoc || currentDoc.isDeleted) continue;
 
-      const eventPayload = {
-        title: titulo.trim(),
-        name: titulo.trim(),
-        location: local.trim(),
-        locationResolvedLabel:
-          resolvedLocation.meta?.compactLabel ||
-          resolvedLocation.displayName ||
-          local.trim(),
-        locationMeta: resolvedLocation.meta || null,
-        description: descricao.trim(),
-        estimatedPublic: publicoEstimado ? Number(publicoEstimado) : 0,
-        operationType: tipoOperacao,
-        type: tipoOperacao,
-        status,
-        originType: origem,
+        if (replacementEmbeddedPlanningDocuments[currentDoc.id]) {
+          embeddedPlanningDocuments.push(
+            replacementEmbeddedPlanningDocuments[currentDoc.id]
+          );
+          continue;
+        }
 
-        command: getUnitCode(primaryRootUnit) || getUnitLabel(primaryRootUnit),
-        commands,
-
-        createdByUnitId: originUnitPayload.id,
-        createdByUnitCode: originUnitPayload.code || null,
-        createdByUnitName: originUnitPayload.name || null,
-        unitPath: originUnitPayload.path || null,
-
-        responsibleUnitIds,
-        responsibleUnits,
-        responsibleUnitPaths: responsibleUnits.map((u) => u.unitPath),
-
-        participantUnitIds,
-        involvedUnits,
-        involvedUnitsCount: involvedUnits.length,
-
-        visibleToUnitIds,
-        visibleToUnitCodes,
-        visibleToUnitPaths,
-
-        hasPlanningDocument: hasPlanningDocuments,
-        planningCategory: hasPlanningDocuments
-          ? normalizePlanningCategory(planningCategory)
-          : null,
-        planningDocumentsCount: hasPlanningDocuments
-          ? totalPlanningDocuments
-          : 0,
-        planningDocumentScope: hasPlanningDocuments ? planningOwnerScope : null,
-        planningOwnerUnitId:
-          hasPlanningDocuments && planningOwnerScope === "UNIT"
-            ? planningOriginMeta.originUnitId
-            : null,
-        planningOwnerUnitCode:
-          hasPlanningDocuments && planningOwnerScope === "UNIT"
-            ? planningOriginMeta.originUnitCode
-            : null,
-        planningOwnerUnitName:
-          hasPlanningDocuments && planningOwnerScope === "UNIT"
-            ? planningOriginMeta.originUnitName
-            : null,
-
-        startAt,
-        endAt,
-
-        lat: resolvedLocation.lat,
-        lng: resolvedLocation.lng,
-
-        draftStage: "READY",
-      };
-
-      if (isEditMode) {
-        batch.set(
-          eventRef,
-          {
-            ...eventPayload,
-            updatedAt: serverTimestamp(),
-            updatedByUid: user?.uid || null,
-            updatedByEmail: user?.email || null,
-            updatedByRole: claims?.role || null,
-
-            retifiedAt: serverTimestamp(),
-            retifiedByUid: user?.uid || null,
-            retifiedByEmail: user?.email || null,
-
-            revision: Number(editingEvent?.revision || 1) + 1,
-            distributionVersion:
-              Number(editingEvent?.distributionVersion || 1) + 1,
-            distributionTriggerAt: serverTimestamp(),
-            distributionStatus: "PENDING_RETIFICATION",
-            distributionType: "RETIFICACAO",
-          },
-          { merge: true }
+        embeddedPlanningDocuments.push(
+          buildEmbeddedPlanningDocumentFromStoredDoc(currentDoc)
         );
-      } else {
-        batch.set(eventRef, {
-          ...eventPayload,
-          createdAt: serverTimestamp(),
-          createdByUid: user?.uid || null,
-          createdByEmail: user?.email || null,
-          createdByRole: claims?.role || null,
-
-          revision: 1,
-          distributionVersion: 1,
-          distributionTriggerAt: serverTimestamp(),
-          distributionStatus: "PENDING",
-          distributionType: "NOVO_EVENTO",
-        });
       }
+
+      embeddedPlanningDocuments.push(...newlyEmbeddedPlanningDocuments);
+
+      await setDoc(
+        eventRef,
+        {
+          planningDocuments: embeddedPlanningDocuments,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      let supplementalWriteFailed = false;
 
       if (isEditMode) {
         const existingParticipantsSnap = await getDocs(
@@ -2576,7 +2732,7 @@ export default function CreateEvent({
           unitPath: unit.unitPath,
           category: unit.category,
           isManager: unit.isManager,
-          roleInEvent: responsibleUnitIds.includes(unit.unitId)
+          roleInEvent: normalizedResponsibleUnitIds.includes(unit.unitId)
             ? "RESPONSIBLE"
             : "INVOLVED",
           canUploadDesdobramento: true,
@@ -2629,10 +2785,19 @@ export default function CreateEvent({
         batch.set(planningDocRef, planningDoc);
       }
 
-      await batch.commit();
+      try {
+        await batch.commit();
+      } catch (supplementalError) {
+        supplementalWriteFailed = true;
+        console.error("Falha ao gravar vínculos complementares do evento:", supplementalError);
+      }
 
       setSucesso(
-        isEditMode
+        supplementalWriteFailed
+          ? isEditMode
+            ? "Evento/operação atualizado com sucesso. Os vínculos complementares (participantes/documentos) não puderam ser gravados automaticamente por permissão e podem precisar de ajuste manual."
+            : "Evento/operação criado com sucesso. Os vínculos complementares (participantes/documentos) não puderam ser gravados automaticamente por permissão e podem precisar de ajuste manual."
+          : isEditMode
           ? "Evento/operação atualizado com sucesso."
           : "Evento/operação criado com sucesso."
       );
@@ -2646,11 +2811,18 @@ export default function CreateEvent({
       }
     } catch (error) {
       console.error(error);
-      setErro(
-        isEditMode
-          ? "Não foi possível atualizar o evento/operação."
-          : "Não foi possível salvar o evento/operação."
-      );
+
+      const baseMessage = isEditMode
+        ? "Não foi possível atualizar o evento/operação."
+        : "Não foi possível salvar o evento/operação.";
+
+      const errorMessage = String(error?.message || "").trim();
+
+      if (errorMessage) {
+        setErro(`${baseMessage} ${errorMessage}`);
+      } else {
+        setErro(baseMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -2872,9 +3044,16 @@ export default function CreateEvent({
                 <select
                   value={tipoOperacao}
                   onChange={(e) => setTipoOperacao(e.target.value)}
+                  disabled={!canChooseIntegratedOperation}
                 >
-                  <option value="INTEGRADO">Integrado</option>
-                  <option value="CENTRALIZADO">Centralizado</option>
+                  {canChooseIntegratedOperation ? (
+                    <>
+                      <option value="INTEGRADO">Integrado</option>
+                      <option value="CENTRALIZADO">Centralizado</option>
+                    </>
+                  ) : (
+                    <option value="CENTRALIZADO">Centralizado</option>
+                  )}
                 </select>
               </div>
 
@@ -3048,16 +3227,17 @@ export default function CreateEvent({
                       <span>Pré-visualização da marcação do evento</span>
                     </div>
 
-                    <MiniGoogleMapPreview
-                      lat={Number(lat)}
-                      lng={Number(lng)}
-                      title={local || "Local do evento"}
-                      subtitle={
-                        locationMeta?.compactLabel ||
-                        locationMeta?.displayName ||
-                        local ||
-                        ""
-                      }
+                    <iframe
+                      title="Mapa do local do evento"
+                      src={miniMapSrc}
+                      style={{
+                        width: "100%",
+                        height: 220,
+                        border: "none",
+                        display: "block",
+                      }}
+                      loading="lazy"
+                      referrerPolicy="no-referrer-when-downgrade"
                     />
 
                     <div
@@ -3159,15 +3339,6 @@ export default function CreateEvent({
                 </div>
               </div>
 
-              <div className="field fieldSpan2">
-                <label>Descrição / Observações</label>
-                <textarea
-                  rows="4"
-                  value={descricao}
-                  onChange={(e) => setDescricao(e.target.value)}
-                  placeholder="Descreva a finalidade, contexto ou observações relevantes."
-                />
-              </div>
             </div>
           </section>
 
@@ -3698,35 +3869,42 @@ export default function CreateEvent({
             <div className="formGrid">
               <div className="field fieldSpan2">
                 <label>Unidades principais responsáveis</label>
-                <div className="multiAddRow">
-                  <select
-                    value={responsibleUnitToAddId}
-                    onChange={(e) => setResponsibleUnitToAddId(e.target.value)}
-                    disabled={loadingUnits}
-                  >
-                    <option value="">
-                      {loadingUnits
-                        ? "Carregando unidades..."
-                        : "Selecione uma unidade"}
-                    </option>
 
-                    {availableResponsibleOptions.map((unit) => (
-                      <option key={unit.id} value={unit.id}>
-                        {unit.label}
+                {canEditResponsibleSelection ? (
+                  <div className="multiAddRow">
+                    <select
+                      value={responsibleUnitToAddId}
+                      onChange={(e) => setResponsibleUnitToAddId(e.target.value)}
+                      disabled={loadingUnits}
+                    >
+                      <option value="">
+                        {loadingUnits
+                          ? "Carregando unidades..."
+                          : "Selecione uma unidade"}
                       </option>
-                    ))}
-                  </select>
 
-                  <button
-                    type="button"
-                    className="addUnitBtn"
-                    onClick={addResponsibleUnit}
-                    disabled={!responsibleUnitToAddId}
-                  >
-                    <PlusCircle size={16} />
-                    <span>Adicionar</span>
-                  </button>
-                </div>
+                      {availableResponsibleOptions.map((unit) => (
+                        <option key={unit.id} value={unit.id}>
+                          {unit.label}
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      className="addUnitBtn"
+                      onClick={addResponsibleUnit}
+                      disabled={!responsibleUnitToAddId}
+                    >
+                      <PlusCircle size={16} />
+                      <span>Adicionar</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="emptySelectedUnits">
+                    A unidade responsável principal fica travada na unidade do perfil logado.
+                  </div>
+                )}
               </div>
 
               <div className="field fieldSpan2">
@@ -3745,14 +3923,16 @@ export default function CreateEvent({
                           {getUnitLabel(unit)}
                         </span>
 
-                        <button
-                          type="button"
-                          className="removeUnitBtn"
-                          onClick={() => removeResponsibleUnit(unit.id)}
-                          title="Remover unidade responsável"
-                        >
-                          <X size={14} />
-                        </button>
+                        {canEditResponsibleSelection ? (
+                          <button
+                            type="button"
+                            className="removeUnitBtn"
+                            onClick={() => removeResponsibleUnit(unit.id)}
+                            title="Remover unidade responsável"
+                          >
+                            <X size={14} />
+                          </button>
+                        ) : null}
                       </div>
                     ))}
                   </div>
@@ -3765,11 +3945,17 @@ export default function CreateEvent({
                   <select
                     value={unitToAddId}
                     onChange={(e) => setUnitToAddId(e.target.value)}
-                    disabled={loadingUnits}
+                    disabled={loadingUnits || availableParticipantOptions.length === 0}
                   >
                     <option value="">
                       {loadingUnits
                         ? "Carregando unidades..."
+                        : availableParticipantOptions.length === 0
+                        ? currentUserIsAio
+                          ? "Nenhuma unidade disponível"
+                          : automaticOrigin.type === "UNIDADE_GESTORA" || loginUnitHasSubordinates
+                          ? "Nenhuma unidade subordinada do escopo disponível"
+                          : "Seu perfil não pode adicionar unidades fora do próprio escopo"
                         : "Selecione uma unidade"}
                     </option>
 

@@ -28,7 +28,9 @@ import "../styles/home.css";
 import "../styles/units.css";
 
 function getUnitCode(unit) {
-  return String(unit?.code || unit?.sigla || "").trim().toUpperCase();
+  return String(unit?.code || unit?.sigla || "")
+    .trim()
+    .toUpperCase();
 }
 
 function getUnitLabel(unit) {
@@ -41,6 +43,10 @@ function getUnitCategory(unit) {
 
 function normalizeKey(value) {
   return String(value || "").trim().toUpperCase();
+}
+
+function normalizeEmail(value) {
+  return String(value || "").trim().toLowerCase();
 }
 
 function sortUnits(a, b) {
@@ -71,8 +77,19 @@ function collectDescendants(unitId, childrenMap, result = new Set()) {
 function normalizeAccessProfile(value) {
   const raw = String(value || "").toUpperCase().trim();
 
+  if (raw === "COMANDO") return "COMANDO";
   if (raw === "P-3" || raw === "P3") return "P-3";
-  if (raw === "AUXILIAR_P3") return "AUXILIAR_P3";
+  if (raw === "AUXILIAR_P3" || raw === "AUXILIAR P3") return "AUXILIAR_P3";
+  if (
+    raw === "VISUALIZACAO" ||
+    raw === "VISUALIZAÇÃO" ||
+    raw === "VIEWER" ||
+    raw === "READ_ONLY" ||
+    raw === "SOMENTE_VISUALIZACAO"
+  ) {
+    return "VISUALIZACAO";
+  }
+
   return "COMANDO";
 }
 
@@ -82,6 +99,7 @@ function getDefaultSystemRoleForAccessProfile(accessProfile) {
   if (profile === "COMANDO") return "UNIT_MANAGER";
   if (profile === "P-3") return "P3";
   if (profile === "AUXILIAR_P3") return "AUXILIAR_P3";
+  if (profile === "VISUALIZACAO") return "UNIDADE_OPERACIONAL";
 
   return "UNIT_MANAGER";
 }
@@ -97,7 +115,8 @@ function normalizeSystemRole(value, accessProfile) {
     raw === "P3" ||
     raw === "AUXILIAR_P3" ||
     raw === "UNIDADE_GESTORA" ||
-    raw === "UNIDADE_OPERACIONAL"
+    raw === "UNIDADE_OPERACIONAL" ||
+    raw === "VIEWER"
   ) {
     return raw;
   }
@@ -132,10 +151,33 @@ function getProfilePermissions(accessProfile) {
     };
   }
 
+  if (profile === "VISUALIZACAO") {
+    return {
+      canView: true,
+      canEdit: false,
+      canManageUsers: false,
+    };
+  }
+
   return {
     canView: true,
     canEdit: false,
     canManageUsers: false,
+  };
+}
+
+function getGlobalFlagsBySystemRole(systemRole) {
+  const role = String(systemRole || "").toUpperCase().trim();
+
+  const isAio = role === "AIO" || role === "AIO_ADMIN";
+  const canViewAll = role === "ADMIN" || role === "AIO" || role === "AIO_ADMIN";
+  const canManageAll =
+    role === "ADMIN" || role === "AIO" || role === "AIO_ADMIN";
+
+  return {
+    isAio,
+    canViewAll,
+    canManageAll,
   };
 }
 
@@ -149,6 +191,7 @@ function roleLabel(value) {
     AUXILIAR_P3: "Auxiliar P-3",
     UNIDADE_GESTORA: "Unidade Gestora",
     UNIDADE_OPERACIONAL: "Unidade Operacional",
+    VIEWER: "Somente visualização",
   };
 
   return map[String(value || "").toUpperCase()] || "-";
@@ -159,6 +202,7 @@ function accessProfileLabel(value) {
     COMANDO: "Comando",
     "P-3": "P-3",
     AUXILIAR_P3: "Auxiliar P-3",
+    VISUALIZACAO: "Somente visualização",
   };
 
   return map[normalizeAccessProfile(value)] || "-";
@@ -270,15 +314,22 @@ export default function AccessControl({
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState("");
 
-  const claimsRole = String(claims?.role || "").toUpperCase().trim();
-  const claimsUnitId = String(claims?.unitId || claims?.currentUnitId || "").trim();
+  const claimsRole = String(
+    claims?.systemRole || claims?.role || ""
+  ).toUpperCase().trim();
+
+  const claimsUnitId = String(
+    claims?.unitId || claims?.currentUnitId || ""
+  ).trim();
+
   const claimsAccessProfile = normalizeAccessProfile(claims?.accessProfile);
 
   const isAdminLike =
     claimsRole === "ADMIN" ||
     claimsRole === "AIO" ||
     claimsRole === "AIO_ADMIN" ||
-    claims?.canManageAll === true;
+    claims?.canManageAll === true ||
+    claims?.canEditAll === true;
 
   const claimIsP3Manager =
     claimsRole === "P3" ||
@@ -472,13 +523,12 @@ export default function AccessControl({
   }, [rootUnits, childrenMap]);
 
   const currentUserProfiles = useMemo(() => {
-    const currentEmail = String(user?.email || "").trim().toLowerCase();
+    const currentEmail = normalizeEmail(user?.email);
     if (!currentEmail) return [];
 
     return normalizedItems.filter(
       (item) =>
-        String(item.email || "").trim().toLowerCase() === currentEmail &&
-        item.isActive !== false
+        normalizeEmail(item.email) === currentEmail && item.isActive !== false
     );
   }, [normalizedItems, user]);
 
@@ -755,7 +805,7 @@ export default function AccessControl({
       const normalizedRole = normalizeSystemRole(systemRole, normalizedProfile);
 
       if (normalizedProfile === "COMANDO") {
-        setErro("P-3 só pode cadastrar perfis P-3 ou Auxiliar P-3.");
+        setErro("P-3 só pode cadastrar perfis P-3, Auxiliar P-3 ou Somente visualização.");
         return false;
       }
 
@@ -772,7 +822,7 @@ export default function AccessControl({
     const duplicatedEmail = items.find(
       (item) =>
         item.id !== editingId &&
-        String(item.email || "").toLowerCase() === email.trim().toLowerCase()
+        normalizeEmail(item.email) === normalizeEmail(email)
     );
 
     if (duplicatedEmail) {
@@ -813,12 +863,15 @@ export default function AccessControl({
           ? unitMap[selectedUnit.parentUnitId]
           : null;
 
+      const { isAio, canViewAll, canManageAll } =
+        getGlobalFlagsBySystemRole(normalizedRole);
+
       const payload = {
         postoGrad: postoGrad.trim(),
         fullName: nomeCompleto.trim(),
         ci: ci.trim(),
         cpf: cpf.trim(),
-        email: email.trim().toLowerCase(),
+        email: normalizeEmail(email),
 
         unitId: selectedUnit.id,
         unitCode: getUnitCode(selectedUnit),
@@ -851,7 +904,13 @@ export default function AccessControl({
 
         permissions,
         canManageUsers: permissions.canManageUsers === true,
+
+        canViewAll,
+        canManageAll,
+        isAio,
+
         isActive,
+        status: isActive ? "ACTIVE" : "INACTIVE",
       };
 
       if (editingId) {
@@ -883,6 +942,9 @@ export default function AccessControl({
           createdByUid: user?.uid || null,
           createdByEmail: user?.email || null,
           createdByRole: claims?.role || null,
+          updatedAt: serverTimestamp(),
+          updatedByUid: user?.uid || null,
+          updatedByEmail: user?.email || null,
         });
 
         setSucesso("Perfil de acesso salvo com sucesso.");
@@ -1281,7 +1343,7 @@ export default function AccessControl({
             <div className="unitsSubline">
               {isAdminLike
                 ? "Cadastre usuários e defina o tipo de acesso de cada perfil."
-                : "Como P-3, você pode cadastrar e gerenciar perfis P-3 e Auxiliar P-3 da sua unidade e subordinadas."}
+                : "Como P-3, você pode cadastrar e gerenciar perfis P-3, Auxiliar P-3 e Somente visualização da sua unidade e subordinadas."}
             </div>
           </div>
 
@@ -1302,7 +1364,7 @@ export default function AccessControl({
                 <p>
                   {isAdminLike
                     ? "Preencha os dados funcionais e o nível de acesso."
-                    : "Cadastre perfis P-3 ou Auxiliar P-3 dentro do seu escopo hierárquico."}
+                    : "Cadastre perfis P-3, Auxiliar P-3 ou Somente visualização dentro do seu escopo hierárquico."}
                 </p>
               </div>
             </div>
@@ -1419,9 +1481,11 @@ export default function AccessControl({
                 >
                   {isAdminLike && <option value="ADMIN">Admin</option>}
                   {isAdminLike && <option value="AIO">AIO</option>}
+                  {isAdminLike && <option value="AIO_ADMIN">AIO Admin</option>}
                   {isAdminLike && <option value="UNIT_MANAGER">Comando</option>}
                   <option value="P3">P-3</option>
                   <option value="AUXILIAR_P3">Auxiliar P-3</option>
+                  <option value="UNIDADE_OPERACIONAL">Unidade Operacional</option>
                 </select>
               </div>
 
@@ -1434,9 +1498,13 @@ export default function AccessControl({
                     setAccessProfile(nextProfile);
 
                     if (!isAdminLike) {
-                      setSystemRole(
-                        nextProfile === "AUXILIAR_P3" ? "AUXILIAR_P3" : "P3"
-                      );
+                      if (nextProfile === "AUXILIAR_P3") {
+                        setSystemRole("AUXILIAR_P3");
+                      } else if (nextProfile === "VISUALIZACAO") {
+                        setSystemRole("UNIDADE_OPERACIONAL");
+                      } else {
+                        setSystemRole("P3");
+                      }
                     } else {
                       setSystemRole(getDefaultSystemRoleForAccessProfile(nextProfile));
                     }
@@ -1447,6 +1515,7 @@ export default function AccessControl({
                   {isAdminLike && <option value="COMANDO">Comando</option>}
                   <option value="P-3">P-3</option>
                   <option value="AUXILIAR_P3">Auxiliar P-3</option>
+                  <option value="VISUALIZACAO">Somente visualização</option>
                 </select>
               </div>
 
